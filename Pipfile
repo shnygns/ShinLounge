@@ -1,0 +1,13 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+pytelegrambotapi = ">=4.7.0"
+pyyaml = ">=3.12"
+
+[dev-packages]
+
+[requires]
+python_version = "2.7"

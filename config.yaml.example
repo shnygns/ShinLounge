@@ -1,0 +1,62 @@
+# Telegram bot token
+bot_token: "BOT_TOKEN_HERE"
+
+# supported db types: json, sqlite
+# both take a single argument which is the database file path
+database: [sqlite, "secretlounge.sqlite"]
+
+# registration open for new users?
+# defaults to true
+#reg_open: true
+
+# relay contacts
+allow_contacts: false
+# relay arbitrary documents/files (GIFs always work)
+allow_documents: true
+# relay (anonymous) polls
+allow_polls: true
+
+# allow mods to remove message without issuing a cooldown
+allow_remove_command: false
+
+# enable signing messages using /sign or /tsign as well as setting a tripcode
+enable_signing: false
+# limit usage of /sign to once in every interval (seconds)
+# defaults to 600 if not specified, set to 0 to disable
+#sign_limit_interval: 600
+
+# limit usage of +1 and -1 to once every interval (seconds)
+# defaults to 0 (+1) and 60 (-1) if not specified, set to 0 to disable
+#vote_up_limit_interval: 0
+#vote_down_limit_interval: 60
+
+# channel id the bot should post log entries into
+# defaults to false (no channel logging), the ID starts with -100...
+# bot needs to be admin in channel
+#log_channel: false
+
+karma_level_names: ["-2", "-1", "0", "1", "2", "3", "4", "5", "6"]
+
+# amounts for karma add/remove
+# defaults to 1
+#karma_amount_add: 1
+#karma_amount_remove: 1
+
+# name of your bot (will be displayed as .... lounge)
+bot_name: anon
+# display "karma" as "pats" (defaults to "false")
+#karma_is_pats: false
+
+# point of contact shown to blacklisted users (optional)
+#blacklist_contact: http://t.me/invite/something
+
+# duration (hours) during which new users can't send media or forwards (optional)
+#media_limit_period: 3
+
+# map of bots that users can refer to in their messages (optional)
+# e.g. >>>/foo/ would be turned into an inline link to http://t.me/foochatbot
+#linked_network:
+#  foo: foochatbot
+#  bar: barchatbot
+# alternatively the map can also be loaded from another YAML file using this syntax
+#linked_network: "./somewhere/bots.yml"

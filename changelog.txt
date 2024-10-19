@@ -1,0 +1,28 @@
+=Catlounge Version 1.0 =
+* Added: /help shows now all relevant commands for you
+* Changed: Karma can be now pats through config
+* Added: Enhanced user count for all users
+* Added: You can now downvote with -1 (Defult cooldown 1 minute)
+* Changed: /motd is now /rules
+* Added: User command /changelog
+* Added: Support for anonymous polls (forwarded)
+* Added: Karma levels (must be namend in config)
+* Added: /ksign signs a message with your karma level
+* Added: Karma level notifications
+* Added: User command /karmainfo
+* Added: Mod command /deleteall and /removeall to delete all cached messages from a user
+* Changed: /blacklist is now a mod command
+* Changed: /blacklist also deletes all messages from the cache of the selected user
+* Added: Mod command /cooldown DURATION to spicify a cooldown
+* Added: Support for /delete DURATION to specify a cooldown + delete
+* Added: Admin /info now shows the real rank, karma value
+* Added: Telegram log channel support for cmd logs
+* Added: You can set a Name for your bot/user (bot_name)
+* Added: Registration can now be closed through config (reg_open)
+* Fixed: Clients with disabled voice/video privacy setting now receive notifications
+* Fixed: Commands return an error message if a required argument is missing
+* Added: Admin command /botinfo (shows usefull information about your bot)
+* Added: /commands command to show/change registred bot commands
+* Added: /setup_commands command
+* Added: Compatibility for Windows (except for tripcodes)
+* Added: Info message for the first user
