@@ -18,10 +18,10 @@ class SystemConfig():
 
 
 
-# SHIN UPDATE: Added chat_username
+# SHIN UPDATE: Added chat_username, registered
 
 USER_PROPS = (
-	"id", "username", "chat_username", "realname", "rank", "joined", "left", "lastActive",
+	"id", "username", "chat_username", "realname", "rank", "joined", "registered", "media_count", "left", "lastActive",
 	"cooldownUntil", "blacklistReason", "warnings", "warnExpiry", "karma",
 	"hideKarma", "debugEnabled", "tripcode"
 )
@@ -35,6 +35,8 @@ class User():
 		self.realname = None # str
 		self.rank = None # int
 		self.joined = None # datetime
+		self.registered = None # datetime
+		self.media_count = None # int
 		self.left = None # datetime?
 		self.lastActive = None # datetime
 		self.cooldownUntil = None # datetime?
@@ -57,6 +59,7 @@ class User():
 		self.lastActive = self.joined
 		self.warnings = 0
 		self.karma = 0
+		self.media_count = 0
 		self.hideKarma = False
 		self.debugEnabled = False
 	def isJoined(self):
@@ -192,10 +195,10 @@ class JSONDatabase(Database):
 	@staticmethod
 
 
-	# SHIN UPDATE: Added chat_username
+	# SHIN UPDATE: Added chat_username, registered, media_count
 
 	def _userToDict(user):
-		props = ["id", "username", "chat_username", "realname", "rank", "joined", "left",
+		props = ["id", "username", "chat_username", "realname", "rank", "joined", "registered", "media_count", "left",
 			"lastActive", "cooldownUntil", "blacklistReason", "warnings",
 			"warnExpiry", "karma", "hideKarma", "debugEnabled", "tripcode"]
 		d = {}
@@ -208,14 +211,14 @@ class JSONDatabase(Database):
 	@staticmethod
 
 
-	# SHIN UPDATE: Added chat_username
+	# SHIN UPDATE: Added chat_username, registered, media_count
 
 	def _userFromDict(d):
 		if d is None: return None
-		props = ["id", "username", "chat_username", "realname", "rank", "blacklistReason",
+		props = ["id", "username", "chat_username", "realname", "rank", "blacklistReason", "media_count",
 			"warnings", "karma", "hideKarma", "debugEnabled"]
 		props_d = [("tripcode", None)]
-		dateprops = ["joined", "left", "lastActive", "cooldownUntil", "warnExpiry"]
+		dateprops = ["joined", "registered", "left", "lastActive", "cooldownUntil", "warnExpiry"]
 		user = User()
 		for prop in props:
 			setattr(user, prop, d[prop])
@@ -306,7 +309,7 @@ class SQLiteDatabase(Database):
 		return user
 	
 
-	# SHIN UPDATE: Added chat_username to schema, pragma, and table creation
+	# SHIN UPDATE: Added chat_username, registered, media_count to schema, pragma, and table creation
 	def _ensure_schema(self):
 		def row_exists(table, name):
 			cur = self.db.execute("PRAGMA table_info(`" + table + "`);")
@@ -329,6 +332,8 @@ CREATE TABLE IF NOT EXISTS `users` (
 	`realname` TEXT NOT NULL,
 	`rank` INTEGER NOT NULL,
 	`joined` TIMESTAMP NOT NULL,
+	`registered` TIMESTAMP,
+	`media_count` INTEGER NOT NULL DEFAULT 0,
 	`left` TIMESTAMP,
 	`lastActive` TIMESTAMP NOT NULL,
 	`cooldownUntil` TIMESTAMP,
@@ -347,6 +352,10 @@ CREATE TABLE IF NOT EXISTS `users` (
 				self.db.execute("ALTER TABLE `users` ADD `tripcode` TEXT")
 			if not row_exists("users", "chat_username"):
 				self.db.execute("ALTER TABLE `users` ADD `chat_username` TEXT")
+			if not row_exists("users", "registered"):
+				self.db.execute("ALTER TABLE `users` ADD `registered` TIMESTAMP")
+			if not row_exists("users", "media_count"):
+				self.db.execute("ALTER TABLE `users` ADD `media_count` INTEGER NOT NULL DEFAULT 0")
 	def getUser(self, id=None):
 		if id is None:
 			raise ValueError()

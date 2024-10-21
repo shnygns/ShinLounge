@@ -3,6 +3,7 @@ import logging
 import time
 import json
 import re
+import datetime
 from os import path
 
 import src.core as core
@@ -811,8 +812,19 @@ def reaction(ev, modifier):
 
 	return send_answer(ev, core.modify_karma(c_user, reply_msid, modifier), True)
 
+def get_album_messages(media_group_id):
+    # This function should retrieve all messages from the media group
+    # This would typically involve iterating through the incoming updates and matching the media_group_id
+    album_messages = []
+    for update in bot.get_updates():
+        if update.message.media_group_id == media_group_id:
+            album_messages.append(update.message)
+    return album_messages
+
+
 def relay(ev):
 	# handle commands and karma giving
+	album_count = 1
 	if ev.content_type == "text":
 		if ev.text.startswith("/"):
 			c, _ = split_command(ev.text)
@@ -827,20 +839,31 @@ def relay(ev):
 	if ev.content_type == "poll":
 		if not ev.poll.is_anonymous:
 			return send_answer(ev, rp.Reply(rp.types.ERR_POLL_NOT_ANONYMOUS))
+	
+	#SHIN UPDATE - Check if the message is part of an album, and get the media count within the album
+	##if hasattr(ev, 'media_group_id') and ev.media_group_id:
+    #    # This indicates that the message is part of an album
+        # Retrieve all messages in the album
+	#	album_messages = get_album_messages(ev.media_group_id)
+#		for album_ev in album_messages:
+#			album_count += 1
+#	else:
+#		album_count = 1
+
 	# manually handle signing / tripcodes for media since captions don't count for commands
 	if not is_forward(ev) and ev.content_type in CAPTIONABLE_TYPES and (ev.caption or "").startswith("/"):
 		c, arg = split_command(ev.caption)
 		if c in ("s", "sign"):
-			return relay_inner(ev, caption_text=arg, signed=True)
+			return relay_inner(ev, caption_text=arg, signed=True, album_count=album_count)
 		elif c in ("t", "tsign"):
-			return relay_inner(ev, caption_text=arg, tripcode=True)
+			return relay_inner(ev, caption_text=arg, tripcode=True, album_count=album_count)
 
-	relay_inner(ev)
+	relay_inner(ev, album_count=album_count)
 
 # relay the message `ev` to other users in the chat
 # `caption_text` can be a FormattedMessage that overrides the caption of media
 # `signed` and `tripcode` indicate if the message is signed or tripcoded respectively
-def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=False):
+def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=False, album_count=1):
 	is_media = is_forward(ev) or ev.content_type in MEDIA_FILTER_TYPES
 	msid = core.prepare_user_message(UserContainer(ev.from_user), calc_spam_score(ev),
 		is_media=is_media, signed=signed, tripcode=tripcode, ksigned=ksigned)
@@ -848,6 +871,20 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 		return send_answer(ev, msid) # don't relay message, instead reply
 
 	user = db.getUser(id=ev.from_user.id)
+
+
+	# SHIN UPDATE: Check if the message is a video
+	if ev.content_type == "video":
+		with db.modifyUser(id=user.id) as user:
+			user.media_count = (user.media_count or 0) + album_count
+			logging.info(f"User {user.id} - {user.chat_username} has posted {user.media_count} video messages.")
+
+			# If the media count reaches 5, mark the user as registered
+			if user.media_count >= 5 and not user.registered:
+				user.registered = datetime.datetime.utcnow()
+				logging.info(f"User {user.id} - {user.chat_username} has been registered due to posting 5 or more video messages.")
+				bot.send_message(user.id, "Thank you. You are now registered, and will see messages from the group.")
+
 
 	# for signed msgs: check user's forward privacy status first
 	# FIXME? this is a possible bottleneck
@@ -897,7 +934,12 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 		if not user2.isJoined():
 			continue
 
-		# SHIN DEBUG - Check if the user is live
+		# SHIN UPDATE - Skip relaying messages to users who are not registered
+		if not user2.registered:
+			logging.debug(f"User {user2.id} - {user2.chat_username} is not registered and will not receive messages.")
+			continue
+
+		# SHIN UPDATE - Check if the user been deleted or is ontherwise not found
 		try:
 			tchat = bot.get_chat(user2.id)
 		except telebot.apihelper.ApiTelegramException as e:
@@ -907,7 +949,6 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 					user.setLeft(True)
 				continue
 
-		# END SHIN DEBUG
 		if user2 == user and not user.debugEnabled:
 			ch.saveMapping(user2.id, msid, ev.message_id)
 			continue

@@ -14,6 +14,7 @@ launched = None
 
 db = None
 ch = None
+config = None
 spam_scores = None
 sign_last_used = {} # uid -> datetime
 vote_up_last_used = {} # uid -> datetime
@@ -36,12 +37,12 @@ vote_down_interval = None
 
 bot = None  # Add a global variable for the bot instance
 
-def init(config, _db, _ch, _bot):
-	global launched, db, ch, bot, spam_scores, reg_open, log_channel, karma_amount_add, karma_amount_remove, karma_level_names, blacklist_contact, bot_name, karma_is_pats, enable_signing, allow_remove_command, media_limit_period, sign_interval, vote_up_interval, vote_down_interval
+def init(_config, _db, _ch, _bot):
+	global launched, db, ch, bot, config, spam_scores, reg_open, log_channel, karma_amount_add, karma_amount_remove, karma_level_names, blacklist_contact, bot_name, karma_is_pats, enable_signing, allow_remove_command, media_limit_period, sign_interval, vote_up_interval, vote_down_interval
 
 	# Store bot instance
 	bot = _bot
-
+	config = _config
 	launched = datetime.now()
 
 	db = _db
@@ -251,27 +252,43 @@ def user_join(c_user):
 		user = None
 
 	if user is not None:
+		reg_uploads = config["reg_uploads"]
+		videos_uploaded = user.media_count
 		# check if user can't rejoin
 		err = None
 		if user.isBlacklisted():
 			err = rp.Reply(rp.types.ERR_BLACKLISTED, reason=user.blacklistReason, contact=blacklist_contact)
-		elif user.isJoined():
-			# SHIN UPDATE - make sure user has username
-			if not user.chat_username:
-				bot.send_message(c_user.id, "Welcome back! You don't have a username set. Please enter a username to use in the chat. If you prefer, just press enter to use a randomly generated one.")
-				bot.register_next_step_handler_by_chat_id(c_user.id, get_username, user)
-			err = rp.Reply(rp.types.USER_IN_CHAT, bot_name=bot_name)
+		#elif user.isJoined():
+		#	err = rp.Reply(rp.types.USER_IN_CHAT, bot_name=bot_name)
+		# user rejoins
+		if not user.isJoined():
+			with db.modifyUser(id=user.id) as user:
+				updateUserFromEvent(user, c_user)
+				user.setLeft(False)
+			logging.info("%s rejoined chat", user)
+
+
+		# SHIN UPDATE - Prompt user to upload {reg_upload} number of videos to register
+		if not user.registered:
+			if not reg_uploads or (reg_uploads > 0 and user.media_count > reg_uploads):
+				user.registered = datetime.datetime.utcnow()
+				logging.info(f"User {user.id} - {user.chat_username} has been registered due to posting 5 or more video messages.")
+				bot.send_message(user.id, "Welcome back!  You are now registered, and will see messages from the group.")
+
+			elif reg_uploads and reg_uploads > 0 and user.media_count < reg_uploads:
+				bot.send_message(c_user.id, f"Welcome back!  Please upload {reg_uploads} video(s) to complete registration (Current number received: {videos_uploaded}).")
+
+		# SHIN UPDATE - make sure user has username
+		if not user.chat_username:
+			bot.send_message(c_user.id, "But first, you don't have a username set. Please enter a username to use in the chat.")
+			bot.register_next_step_handler_by_chat_id(c_user.id, get_username, user)
+		# 
 		if err is not None:
 			with db.modifyUser(id=user.id) as user:
 				updateUserFromEvent(user, c_user)
 			return err
-		# user rejoins
-		with db.modifyUser(id=user.id) as user:
-			updateUserFromEvent(user, c_user)
-			user.setLeft(False)
-		logging.info("%s rejoined chat", user)
-		return rp.Reply(rp.types.CHAT_JOIN, bot_name=bot_name)
-
+		return 
+	
 	if not reg_open:
 		return rp.Reply(rp.types.ERR_REG_CLOSED)
 
@@ -281,11 +298,17 @@ def user_join(c_user):
 	user.id = c_user.id
 	updateUserFromEvent(user, c_user)
 
+	# Prompt user to upload {reg_upload} numver of videos to register
+	if reg_uploads and reg_uploads > 0:
+		bot.send_message(c_user.id, f"Welcome to the media bot. You will need to upload {reg_uploads} video(s) to complete registration (Current number received: {videos_uploaded}).")
+
 	# Prompt for username
-	bot.send_message(c_user.id, "Welcome! Please enter a username to use in the chat. If you prefer, just press enter to use a randomly generated one.")
+	bot.send_message(c_user.id, "But first, please enter a username to use in the chat.")
 
     # Register a handler to capture the next message as the username
 	bot.register_next_step_handler_by_chat_id(c_user.id, get_username, user)
+
+
 
 	ret = []
 	if not any(db.iterateUserIds()):
@@ -311,6 +334,8 @@ def get_username(message, user):
     user.chat_username = chat_username
     db.setUser(user.id, user)
     logging.info("%s updated username to %s", user, chat_username) 
+	# Prompt for username
+    bot.send_message(user.id, f"Great. Your chat username will be {chat_username}. You are free to upload media and register.")
     return
 
 def generate_username():
@@ -331,8 +356,6 @@ def generate_username():
 #########################################
 ######## End of Shin's New Code #########
 #########################################
-
-
 
 
 
@@ -774,9 +797,12 @@ def prepare_user_message(user: User, msg_score, *, is_media=False, signed=False,
 		if (datetime.now() - user.joined) < media_limit_period:
 			return rp.Reply(rp.types.ERR_MEDIA_LIMIT, media_limit_period=media_limit_period)
 
-	ok = spam_scores.increaseSpamScore(user.id, msg_score)
-	if not ok:
-		return rp.Reply(rp.types.ERR_SPAMMY)
+
+	# SHIN UPDATE - removed SPAM enforcement
+
+	#ok = spam_scores.increaseSpamScore(user.id, msg_score)
+	#if not ok:
+	#	return rp.Reply(rp.types.ERR_SPAMMY)
 
 	# enforce signing cooldown
 	if (signed or ksigned) and sign_interval.total_seconds() > 1:
