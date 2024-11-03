@@ -252,14 +252,12 @@ def user_join(c_user):
 		user = None
 
 	if user is not None:
-		reg_uploads = config["reg_uploads"]
+		reg_uploads = config.get("reg_uploads", 5) 
 		videos_uploaded = user.media_count
 		# check if user can't rejoin
 		err = None
 		if user.isBlacklisted():
 			err = rp.Reply(rp.types.ERR_BLACKLISTED, reason=user.blacklistReason, contact=blacklist_contact)
-		#elif user.isJoined():
-		#	err = rp.Reply(rp.types.USER_IN_CHAT, bot_name=bot_name)
 		# user rejoins
 		if not user.isJoined():
 			with db.modifyUser(id=user.id) as user:
@@ -270,11 +268,13 @@ def user_join(c_user):
 
 		# SHIN UPDATE - Prompt user to upload {reg_upload} number of videos to register
 		if not user.registered:
+			# Check if user has uploaded enough videos to register
 			if not reg_uploads or (reg_uploads > 0 and user.media_count > reg_uploads):
 				user.registered = datetime.datetime.utcnow()
-				logging.info(f"User {user.id} - {user.chat_username} has been registered due to posting 5 or more video messages.")
+				logging.info(f"User {user.id} - {user.chat_username} has been registered due to posting {reg_uploads} or more video messages.")
 				bot.send_message(user.id, "Welcome back!  You are now registered, and will see messages from the group.")
 
+				# Check if the user is required to upload videos, and the number of videos yet uploaded in not enough
 			elif reg_uploads and reg_uploads > 0 and user.media_count < reg_uploads:
 				bot.send_message(c_user.id, f"Welcome back!  Please upload {reg_uploads} video(s) to complete registration (Current number received: {videos_uploaded}).")
 
@@ -282,7 +282,8 @@ def user_join(c_user):
 		if not user.chat_username:
 			bot.send_message(c_user.id, "But first, you don't have a username set. Please enter a username to use in the chat.")
 			bot.register_next_step_handler_by_chat_id(c_user.id, get_username, user)
-		# 
+		
+		#If user cannot rejoin, return error message
 		if err is not None:
 			with db.modifyUser(id=user.id) as user:
 				updateUserFromEvent(user, c_user)
@@ -307,9 +308,6 @@ def user_join(c_user):
 
     # Register a handler to capture the next message as the username
 	bot.register_next_step_handler_by_chat_id(c_user.id, get_username, user)
-
-
-
 	ret = []
 	if not any(db.iterateUserIds()):
 		user.rank = RANKS.admin
