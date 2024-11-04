@@ -253,6 +253,7 @@ def user_join(c_user):
 
 	if user is not None:
 		reg_uploads = config.get("reg_uploads", 5) 
+		media_hours = config.get("media_hours")
 		videos_uploaded = user.media_count
 		# check if user can't rejoin
 		err = None
@@ -264,6 +265,7 @@ def user_join(c_user):
 				updateUserFromEvent(user, c_user)
 				user.setLeft(False)
 			logging.info("%s rejoined chat", user)
+			bot.send_message(c_user.id, f"Welcome back! As a reminder, you need to post a vid every {media_hours} hours to stay live.")
 
 
 		# SHIN UPDATE - Prompt user to upload {reg_upload} number of videos to register
@@ -273,6 +275,7 @@ def user_join(c_user):
 				user.registered = datetime.datetime.utcnow()
 				logging.info(f"User {user.id} - {user.chat_username} has been registered due to posting {reg_uploads} or more video messages.")
 				bot.send_message(user.id, "Welcome back!  You are now registered, and will see messages from the group.")
+				bot.send_message(c_user.id, f"Just a reminder, you need to post a video every {media_hours} hours to stay live.")
 
 				# Check if the user is required to upload videos, and the number of videos yet uploaded in not enough
 			elif reg_uploads and reg_uploads > 0 and user.media_count < reg_uploads:
@@ -302,6 +305,7 @@ def user_join(c_user):
 	# Prompt user to upload {reg_upload} numver of videos to register
 	if reg_uploads and reg_uploads > 0:
 		bot.send_message(c_user.id, f"Welcome to the media bot. You will need to upload {reg_uploads} video(s) to complete registration (Current number received: {videos_uploaded}).")
+		bot.send_message(c_user.id, f"Once you are registered, you need to post a vid every {media_hours} hours to stay live.")
 
 	# Prompt for username
 	bot.send_message(c_user.id, "But first, please enter a username to use in the chat.")

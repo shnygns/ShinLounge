@@ -889,6 +889,7 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 				user.registered = datetime.datetime.utcnow()
 				logging.info(f"User {user.id} - {user.chat_username} has been registered due to posting {reg_uploads} or more video messages.")
 				bot.send_message(user.id, "Thank you. You are now registered, and will see messages from the group.")
+				bot.send_message(user.id, f"As a reminder, you need to post a video every {media_hours} hours to stay live.")
 
 
 	# for signed msgs: check user's forward privacy status first
