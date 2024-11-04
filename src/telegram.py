@@ -867,7 +867,7 @@ def relay(ev):
 # `signed` and `tripcode` indicate if the message is signed or tripcoded respectively
 def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=False, album_count=1):
 	reg_uploads = config.get("reg_uploads", 5) # default to 5 if not set
-	media_hours = config.get("media_hours", 6) # default to 6 if not set
+	media_hours = config.get("media_hours") 
 	is_media = is_forward(ev) or ev.content_type in MEDIA_FILTER_TYPES
 	msid = core.prepare_user_message(UserContainer(ev.from_user), calc_spam_score(ev),
 		is_media=is_media, signed=signed, tripcode=tripcode, ksigned=ksigned)
@@ -955,7 +955,7 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 
 
 		# SHIN UPDATE - Skip relaying messages to users whose timestamp in user.last_media is more than 6 hours ago.
-		if user2.last_media and (datetime.datetime.utcnow() - user2.last_media).total_seconds() > (media_hours * 3600):
+		if media_hours and user2.last_media and (datetime.datetime.utcnow() - user2.last_media).total_seconds() > (media_hours * 3600):
 			logging.debug(f"User {user2.id} - {user2.chat_username} has not posted media in the last {time_diff_hours} hours and {time_diff_minutes} minutes ({media_hours} hour lurk limit) and will not receive messages.")
 			continue
 
