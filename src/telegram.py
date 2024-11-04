@@ -30,6 +30,7 @@ VENUE_PROPS = ("title", "address", "foursquare_id", "foursquare_type", "google_p
 bot = None
 db = None
 ch = None
+config = None
 message_queue = None
 registered_commands = {}
 
@@ -38,9 +39,9 @@ allow_documents = None
 allow_polls = None
 linked_network: dict = None
 
-def init(config, _db, _ch, _bot):
-	global bot, db, ch, message_queue, allow_documents, allow_polls, linked_network
-	if config["bot_token"] == "":
+def init(_config, _db, _ch, _bot):
+	global bot, db, ch, config, message_queue, allow_documents, allow_polls, linked_network
+	if _config["bot_token"] == "":
 		logging.error("No telegram token specified.")
 		exit(1)
 
@@ -48,11 +49,12 @@ def init(config, _db, _ch, _bot):
 	telebot.apihelper.READ_TIMEOUT = 20
 
 
-	# SHIN CHANGE: Bot is not initialized in secretlounge-ng and passed to telegram.init()
+	# SHIN UPDATE: Bot is now initialized in secretlounge-ng and passed to telegram.init()
 	# bot = telebot.TeleBot(config["bot_token"], threaded=False)
 	bot = _bot
 	db = _db
 	ch = _ch
+	config = _config
 	message_queue = MutablePriorityQueue()
 
 	allow_contacts = config["allow_contacts"]
@@ -864,6 +866,8 @@ def relay(ev):
 # `caption_text` can be a FormattedMessage that overrides the caption of media
 # `signed` and `tripcode` indicate if the message is signed or tripcoded respectively
 def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=False, album_count=1):
+	reg_uploads = config.get("reg_uploads", 5) # default to 5 if not set
+	media_hours = config.get("media_hours", 6) # default to 6 if not set
 	is_media = is_forward(ev) or ev.content_type in MEDIA_FILTER_TYPES
 	msid = core.prepare_user_message(UserContainer(ev.from_user), calc_spam_score(ev),
 		is_media=is_media, signed=signed, tripcode=tripcode, ksigned=ksigned)
@@ -877,12 +881,13 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 	if ev.content_type == "video":
 		with db.modifyUser(id=user.id) as user:
 			user.media_count = (user.media_count or 0) + album_count
+			user.last_media = datetime.datetime.utcnow()
 			logging.info(f"User {user.id} - {user.chat_username} has posted {user.media_count} video messages.")
 
-			# If the media count reaches 5, mark the user as registered
-			if user.media_count >= 5 and not user.registered:
+			# If the media count reaches [reg_uploads], mark the user as registered
+			if user.media_count >= reg_uploads and not user.registered:
 				user.registered = datetime.datetime.utcnow()
-				logging.info(f"User {user.id} - {user.chat_username} has been registered due to posting 5 or more video messages.")
+				logging.info(f"User {user.id} - {user.chat_username} has been registered due to posting {reg_uploads} or more video messages.")
 				bot.send_message(user.id, "Thank you. You are now registered, and will see messages from the group.")
 
 
@@ -931,12 +936,27 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 	# relay message to all other users
 	logging.debug("relay(): msid=%d reply_msid=%r", msid, reply_msid)
 	for user2 in db.iterateUsers():
+
 		if not user2.isJoined():
+			logging.debug(f"User {user2.id} - {user2.chat_username} is not joined and will not receive messages.")
 			continue
 
 		# SHIN UPDATE - Skip relaying messages to users who are not registered
 		if not user2.registered:
 			logging.debug(f"User {user2.id} - {user2.chat_username} is not registered and will not receive messages.")
+			continue
+
+		# SHIN UPDATE - Calculate in hours and minutes the time between the last media post and the current message
+		if user2.last_media:
+			time_diff = datetime.datetime.utcnow() - user2.last_media
+			time_diff_hours = round(time_diff.total_seconds() / 3600)
+			time_diff_minutes = round(time_diff.total_seconds() / 60)
+			logging.debug(f"User {user2.id} - {user2.chat_username} last posted media at {user2.last_media}, {time_diff_hours} hours and {time_diff_minutes} minutes ago.")
+
+
+		# SHIN UPDATE - Skip relaying messages to users whose timestamp in user.last_media is more than 6 hours ago.
+		if user2.last_media and (datetime.datetime.utcnow() - user2.last_media).total_seconds() > (media_hours * 3600):
+			logging.debug(f"User {user2.id} - {user2.chat_username} has not posted media in the last {time_diff_hours} hours and {time_diff_minutes} minutes ({media_hours} hour lurk limit) and will not receive messages.")
 			continue
 
 		# SHIN UPDATE - Check if the user been deleted or is ontherwise not found

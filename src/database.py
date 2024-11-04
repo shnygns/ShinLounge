@@ -18,10 +18,10 @@ class SystemConfig():
 
 
 
-# SHIN UPDATE: Added chat_username, registered
+# SHIN UPDATE: Added chat_username, registered, media_count, last_media
 
 USER_PROPS = (
-	"id", "username", "chat_username", "realname", "rank", "joined", "registered", "media_count", "left", "lastActive",
+	"id", "username", "chat_username", "realname", "rank", "joined", "registered", "media_count", "last_media", "left", "lastActive",
 	"cooldownUntil", "blacklistReason", "warnings", "warnExpiry", "karma",
 	"hideKarma", "debugEnabled", "tripcode"
 )
@@ -37,6 +37,7 @@ class User():
 		self.joined = None # datetime
 		self.registered = None # datetime
 		self.media_count = None # int
+		self.last_media = None # datetime
 		self.left = None # datetime?
 		self.lastActive = None # datetime
 		self.cooldownUntil = None # datetime?
@@ -195,10 +196,10 @@ class JSONDatabase(Database):
 	@staticmethod
 
 
-	# SHIN UPDATE: Added chat_username, registered, media_count
+	# SHIN UPDATE: Added chat_username, registered, media_count, last_media
 
 	def _userToDict(user):
-		props = ["id", "username", "chat_username", "realname", "rank", "joined", "registered", "media_count", "left",
+		props = ["id", "username", "chat_username", "realname", "rank", "joined", "registered", "media_count", "last_media", "left",
 			"lastActive", "cooldownUntil", "blacklistReason", "warnings",
 			"warnExpiry", "karma", "hideKarma", "debugEnabled", "tripcode"]
 		d = {}
@@ -211,14 +212,14 @@ class JSONDatabase(Database):
 	@staticmethod
 
 
-	# SHIN UPDATE: Added chat_username, registered, media_count
+	# SHIN UPDATE: Added chat_username, registered, media_count, last_media
 
 	def _userFromDict(d):
 		if d is None: return None
 		props = ["id", "username", "chat_username", "realname", "rank", "blacklistReason", "media_count",
 			"warnings", "karma", "hideKarma", "debugEnabled"]
 		props_d = [("tripcode", None)]
-		dateprops = ["joined", "registered", "left", "lastActive", "cooldownUntil", "warnExpiry"]
+		dateprops = ["joined", "registered",  "last_media", "left", "lastActive", "cooldownUntil", "warnExpiry"]
 		user = User()
 		for prop in props:
 			setattr(user, prop, d[prop])
@@ -334,6 +335,7 @@ CREATE TABLE IF NOT EXISTS `users` (
 	`joined` TIMESTAMP NOT NULL,
 	`registered` TIMESTAMP,
 	`media_count` INTEGER NOT NULL DEFAULT 0,
+	`last_media` TIMESTAMP,
 	`left` TIMESTAMP,
 	`lastActive` TIMESTAMP NOT NULL,
 	`cooldownUntil` TIMESTAMP,
@@ -356,6 +358,8 @@ CREATE TABLE IF NOT EXISTS `users` (
 				self.db.execute("ALTER TABLE `users` ADD `registered` TIMESTAMP")
 			if not row_exists("users", "media_count"):
 				self.db.execute("ALTER TABLE `users` ADD `media_count` INTEGER NOT NULL DEFAULT 0")
+			if not row_exists("users", "last_media"):
+				self.db.execute("ALTER TABLE `users` ADD `last_media` TIMESTAMP")
 	def getUser(self, id=None):
 		if id is None:
 			raise ValueError()
