@@ -953,6 +953,11 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 			time_diff_hours = round(time_diff.total_seconds() / 3600)
 			time_diff_minutes = round(time_diff.total_seconds() / 60)
 			logging.debug(f"User {user2.id} - {user2.chat_username} last posted media at {user2.last_media}, {time_diff_hours} hours and {time_diff_minutes} minutes ago.")
+		
+		# SHIN UPDATE - this else clause shouldn't be necessary because everyone uploads to register, but is included for backwards compatibility
+		else:
+			with db.modifyUser(id=user2.id) as user_2:
+				user_2.last_media = datetime.datetime.utcnow()
 
 
 		# SHIN UPDATE - Skip relaying messages to users whose timestamp in user.last_media is more than 6 hours ago.
