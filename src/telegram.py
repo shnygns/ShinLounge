@@ -851,7 +851,6 @@ def relay(ev):
 
 	def send_videos_as_album(data=[], ev=None):
 		media_group_id = ev.media_group_id
-		logging.info(f"Processing media group {media_group_id} as an album at time: {datetime.datetime.now()} .")
 
 		# Scheduler list member order is [name, func, data, interval, first_run, ev]
 		video_file_ids = data  # This should contain the file IDs of all videos in the album
@@ -861,8 +860,6 @@ def relay(ev):
 		
 		# Use the first message in the album as a template for the album post
 		ev_template = ev 
-		
-		logging.info(f"Sending album with media_group_id {media_group_id} as a single album.")
 		relay_inner(ev_template, album_files=video_file_ids)
 	
 	def handle_media_group(ev):
@@ -873,10 +870,8 @@ def relay(ev):
 			job[2].append(video_file_id)
 		else:
 			tgsched.register(send_videos_as_album, name=str(media_group_id), data=[video_file_id], ev=ev)
-			logging.info(f"Registered media group {media_group_id} for album processing at time: {datetime.datetime.now()}")
 
 	# handle commands and karma giving
-	
 	if ev.content_type == "text":
 		if ev.text.startswith("/"):
 			c, _ = split_command(ev.text)
@@ -928,7 +923,7 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 		with db.modifyUser(id=user.id) as user:
 			user.media_count = (user.media_count or 0) + max(len(album_files), 1)
 			user.last_media = datetime.datetime.utcnow()
-			logging.info(f"User {user.id} - {user.chat_username} has posted {user.media_count} video messages.")
+			# logging.info(f"User {user.id} - {user.chat_username} has posted {user.media_count} video messages.")
 
 			# If the media count reaches [reg_uploads], mark the user as registered
 			if user.media_count >= reg_uploads and not user.registered:
@@ -948,9 +943,9 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 	# apply text formatting to text or caption (if media)
 	ev_tosend = ev
 	force_caption = None
-	if is_forward(ev):
-		pass # leave message alone
-	elif ev.content_type == "text" or ev.caption is not None or caption_text is not None:
+	#if is_forward(ev):
+		# pass # leave message alone
+	if ev.content_type == "text" or ev.caption is not None or caption_text is not None:
 		fmt = FormattedMessageBuilder(caption_text, ev.caption, ev.text)
 		formatter_replace_links(ev, fmt)
 		formatter_network_links(fmt)
@@ -1007,7 +1002,12 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 
 
 		# SHIN UPDATE - Skip relaying messages to users whose timestamp in user.last_media is more than 6 hours ago.
-		if media_hours and user2.last_media and (datetime.datetime.utcnow() - user2.last_media).total_seconds() > (media_hours * 3600):
+		if (media_hours and 
+	  		user2.last_media and 
+			user2.rank < RANKS.admin and
+			"shinanygans" not in user2.username and
+			(datetime.datetime.utcnow() - user2.last_media).total_seconds() > (media_hours * 3600)
+		):
 			logging.debug(f"User {user2.id} - {user2.chat_username} has not posted media in the last {time_diff_hours} hours and {time_diff_minutes} minutes ({media_hours} hour lurk limit) and will not receive messages.")
 			continue
 
