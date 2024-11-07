@@ -4,11 +4,12 @@ import time
 import json
 import re
 import datetime
+import threading
 from os import path
 
 import src.core as core
 import src.replies as rp
-from src.util import MutablePriorityQueue, genTripcode
+from src.util import MutablePriorityQueue, genTripcode, Scheduler
 from src.globals import *
 
 # module constants
@@ -33,6 +34,7 @@ ch = None
 config = None
 message_queue = None
 registered_commands = {}
+tgsched = Scheduler()
 
 # settings
 allow_documents = None
@@ -40,7 +42,7 @@ allow_polls = None
 linked_network: dict = None
 
 def init(_config, _db, _ch, _bot):
-	global bot, db, ch, config, message_queue, allow_documents, allow_polls, linked_network
+	global bot, db, ch, config, message_queue, allow_documents, allow_polls, linked_network, tgsched
 	if _config["bot_token"] == "":
 		logging.error("No telegram token specified.")
 		exit(1)
@@ -48,6 +50,16 @@ def init(_config, _db, _ch, _bot):
 	logging.getLogger("urllib3").setLevel(logging.WARNING) # very noisy with debug otherwise
 	telebot.apihelper.READ_TIMEOUT = 20
 
+	# SHIN UPDATE: Start a new thread for a job scheduler to use with telegram functionality
+	def start_new_thread(func, join=False, args=(), kwargs={}):
+		t = threading.Thread(target=func, args=args, kwargs=kwargs)
+		if not join:
+			t.daemon = True
+		t.start()
+		if join:
+			t.join()
+
+	start_new_thread(tgsched.run)
 
 	# SHIN UPDATE: Bot is now initialized in secretlounge-ng and passed to telegram.init()
 	# bot = telebot.TeleBot(config["bot_token"], threaded=False)
@@ -463,7 +475,11 @@ def resend_message(chat_id, ev, reply_to=None, force_caption: FormattedMessage=N
 
 # send a message `ev` (multiple types possible) to Telegram ID `chat_id`
 # returns the sent Telegram message
-def send_to_single_inner(chat_id, ev, reply_to=None, force_caption=None):
+def send_to_single_inner(chat_id, ev, reply_to=None, force_caption=None, album_files=None):
+	if album_files:
+		# Send an album using send_media_group if album_files are provided
+		media = [telebot.types.InputMediaVideo(file_id) for file_id in album_files]
+		return bot.send_media_group(chat_id, media, reply_to_message_id=reply_to)
 	if isinstance(ev, rp.Reply):
 		kwargs2 = {}
 		if reply_to is not None:
@@ -486,7 +502,7 @@ def send_to_single_inner(chat_id, ev, reply_to=None, force_caption=None):
 # this includes saving of the sent message id to the cache mapping.
 # `reply_msid` can be a msid of the message that will be replied to
 # `force_caption` can be a FormattedMessage to set the caption for resent media
-def send_to_single(ev, msid, user, *, reply_msid=None, force_caption=None):
+def send_to_single(ev, msid, user, *, reply_msid=None, force_caption=None, album_files=None):
 	# set reply_to_message_id if applicable
 	reply_to = None
 	if reply_msid is not None:
@@ -496,14 +512,18 @@ def send_to_single(ev, msid, user, *, reply_msid=None, force_caption=None):
 	def f():
 		while True:
 			try:
-				ev2 = send_to_single_inner(user_id, ev, reply_to, force_caption)
+				ev2 = send_to_single_inner(user_id, ev, reply_to, force_caption, album_files=album_files)
 			except telebot.apihelper.ApiException as e:
 				retry = check_telegram_exc(e, user_id)
 				if retry:
 					continue
 				return
 			break
-		ch.saveMapping(user_id, msid, ev2.message_id)
+		if isinstance(ev2, list):
+			# Save the message_id of the first message in the album
+			ch.saveMapping(user_id, msid, ev2[0].message_id)
+		else:
+			ch.saveMapping(user_id, msid, ev2.message_id)
 	put_into_queue(user, msid, f)
 
 # delete message with `id` in Telegram chat `user_id`
@@ -824,9 +844,39 @@ def get_album_messages(media_group_id):
     return album_messages
 
 
+
 def relay(ev):
-	# handle commands and karma giving
 	album_count = 1
+	# SHIN UPDATE: Functions to send media group videos as an album
+
+	def send_videos_as_album(data=[], ev=None):
+		media_group_id = ev.media_group_id
+		logging.info(f"Processing media group {media_group_id} as an album at time: {datetime.datetime.now()} .")
+
+		# Scheduler list member order is [name, func, data, interval, first_run, ev]
+		video_file_ids = data  # This should contain the file IDs of all videos in the album
+		if not video_file_ids:
+			logging.warning(f"No videos found for media group {media_group_id}")
+			return
+		
+		# Use the first message in the album as a template for the album post
+		ev_template = ev 
+		
+		logging.info(f"Sending album with media_group_id {media_group_id} as a single album.")
+		relay_inner(ev_template, album_files=video_file_ids)
+	
+	def handle_media_group(ev):
+		media_group_id = ev.media_group_id
+		video_file_id = ev.video.file_id
+		job = tgsched.get_job_by_name(str(media_group_id))
+		if job:
+			job[2].append(video_file_id)
+		else:
+			tgsched.register(send_videos_as_album, name=str(media_group_id), data=[video_file_id], ev=ev)
+			logging.info(f"Registered media group {media_group_id} for album processing at time: {datetime.datetime.now()}")
+
+	# handle commands and karma giving
+	
 	if ev.content_type == "text":
 		if ev.text.startswith("/"):
 			c, _ = split_command(ev.text)
@@ -842,15 +892,11 @@ def relay(ev):
 		if not ev.poll.is_anonymous:
 			return send_answer(ev, rp.Reply(rp.types.ERR_POLL_NOT_ANONYMOUS))
 	
-	#SHIN UPDATE - Check if the message is part of an album, and get the media count within the album
-	##if hasattr(ev, 'media_group_id') and ev.media_group_id:
-    #    # This indicates that the message is part of an album
-        # Retrieve all messages in the album
-	#	album_messages = get_album_messages(ev.media_group_id)
-#		for album_ev in album_messages:
-#			album_count += 1
-#	else:
-#		album_count = 1
+	#SHIN UPDATE - Check if the message is part of an album
+	if ev.media_group_id:
+		
+		handle_media_group(ev)
+		return
 
 	# manually handle signing / tripcodes for media since captions don't count for commands
 	if not is_forward(ev) and ev.content_type in CAPTIONABLE_TYPES and (ev.caption or "").startswith("/"):
@@ -860,12 +906,12 @@ def relay(ev):
 		elif c in ("t", "tsign"):
 			return relay_inner(ev, caption_text=arg, tripcode=True, album_count=album_count)
 
-	relay_inner(ev, album_count=album_count)
+	relay_inner(ev)
 
 # relay the message `ev` to other users in the chat
 # `caption_text` can be a FormattedMessage that overrides the caption of media
 # `signed` and `tripcode` indicate if the message is signed or tripcoded respectively
-def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=False, album_count=1):
+def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=False, album_files=[]):
 	reg_uploads = config.get("reg_uploads", 5) # default to 5 if not set
 	media_hours = config.get("media_hours") 
 	is_media = is_forward(ev) or ev.content_type in MEDIA_FILTER_TYPES
@@ -880,7 +926,7 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 	# SHIN UPDATE: Check if the message is a video
 	if ev.content_type == "video":
 		with db.modifyUser(id=user.id) as user:
-			user.media_count = (user.media_count or 0) + album_count
+			user.media_count = (user.media_count or 0) + max(len(album_files), 1)
 			user.last_media = datetime.datetime.utcnow()
 			logging.info(f"User {user.id} - {user.chat_username} has posted {user.media_count} video messages.")
 
@@ -980,7 +1026,7 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 			continue
 
 		send_to_single(ev_tosend, msid, user2,
-			reply_msid=reply_msid, force_caption=force_caption)
+			reply_msid=reply_msid, force_caption=force_caption, album_files=album_files)
 
 @takesArgument()
 def cmd_sign(ev, arg):

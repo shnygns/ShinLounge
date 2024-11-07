@@ -2,6 +2,7 @@ import itertools
 import time
 import logging
 import os
+import inspect 
 from datetime import datetime
 from queue import PriorityQueue
 from threading import Lock
@@ -11,28 +12,54 @@ class Scheduler():
 	def __init__(self):
 		self.tasks = [] # list of [interval, next_trigger, func]
 	@staticmethod
-	def _wrapped_call(f):
+	def _wrapped_call(f, data, ev):
 		try:
-			f()
+			# Get the function's parameter names
+			params = inspect.signature(f).parameters
+			# Check if the function requires 'data' and 'ev' parameters
+			if 'data' in params and 'ev' in params:
+				f(data, ev)
+			elif 'data' in params:
+				f(data)
+			elif 'ev' in params:
+				f(ev)
+			else:
+				f()
 		except Exception as e:
 			logging.exception("Exception raised during scheduled task")
-	def register(self, func, **kwargs):
-		interval = timedelta(**kwargs) // timedelta(seconds=1)
-		assert interval > 0
-		self.tasks.append([interval, 0, func])
+	def register(self, func, name="", data=[], ev=None, **kwargs):
+		if not kwargs:
+			interval = 0
+			first_run = 1.2
+		else:
+			interval = timedelta(**kwargs) // timedelta(seconds=1)
+			assert interval > 0
+			first_run = 0
+		self.tasks.append([name, func, data, interval, first_run, ev])
+
+	def get_job_by_name(self, name):
+		for task in self.tasks:
+			if task[0] == name:
+				return task
+		return None
+	
 	def run(self):
 		while True:
 			# Run tasks that have expired
 			now = int(time.monotonic())
 			for e in self.tasks:
-				if now >= e[1]:
-					Scheduler._wrapped_call(e[2])
-					e[1] = now + e[0]
+				if now >= e[4]:
+					Scheduler._wrapped_call(e[1], e[2], e[5])
+					if e[3] == 0:
+						self.tasks.remove(e)
+					else:
+						e[4] = now + e[3]
 			# Wait until a task expires
 			now = int(time.monotonic())
-			wait = min((e[1] - now) for e in self.tasks)
-			if wait > 0:
-				time.sleep(wait)
+			if self.tasks:
+				wait = min((e[4] - now) for e in self.tasks)
+				if wait > 0:
+					time.sleep(wait)
 
 class MutablePriorityQueue():
 	def __init__(self):

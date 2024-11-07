@@ -247,13 +247,13 @@ def registerReceiver(obj):
 
 def user_join(c_user):
 	try:
+		reg_uploads = config.get("reg_uploads", 5) 
+		media_hours = config.get("media_hours")
 		user = db.getUser(id=c_user.id)
 	except KeyError as e:
 		user = None
 
 	if user is not None:
-		reg_uploads = config.get("reg_uploads", 5) 
-		media_hours = config.get("media_hours")
 		videos_uploaded = user.media_count
 		# check if user can't rejoin
 		err = None
