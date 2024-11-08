@@ -1,3 +1,4 @@
 config.copy.yaml
+config.yaml
 *.sqlite
 .vscode
