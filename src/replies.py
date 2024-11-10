@@ -44,9 +44,13 @@ types = NumericEnum([
 	"COMMANDS",
 	"BOOLEAN_CONFIG",
 
+	
+	"CHAT_ANNOUNCE_LIMIT",
+	"CHAT_ENTER_NAME",
 	"CHAT_JOIN",
 	"CHAT_JOIN_FIRST",
 	"CHAT_LEAVE",
+	"CHAT_UPLOAD_UPON_JOINING",
 	"USER_IN_CHAT",
 	"USER_NOT_IN_CHAT",
 	"GIVEN_COOLDOWN",
@@ -156,7 +160,8 @@ format_strs = {
 		]),
 	types.BOOLEAN_CONFIG: lambda enabled, **_:
 		"<b>{description!x}</b>: " + (enabled and "enabled" or "disabled"),
-
+	types.CHAT_ANNOUNCE_LIMIT: em("Once you are registered, you need to post a vid every {media_hours} hours to stay live."),
+	types.CHAT_ENTER_NAME: em("But first, please enter a username to use in the chat."),
 	types.CHAT_JOIN: em("You joined the {bot_name} lounge!"),
 	types.CHAT_JOIN_FIRST: em(
 			"Since you are the first user that joined {bot_name}, you were made an admin automatically. Press /help to see all available commands.\n" +
@@ -166,6 +171,7 @@ format_strs = {
 			"Have fun using catlounge-ng-meow and don't forget to leave us a star on GitHub! 😉"
 		),
 	types.CHAT_LEAVE: em("You left the {bot_name} lounge!"),
+	types.CHAT_UPLOAD_UPON_JOINING: em("Welcome to the media bot. You will need to upload {reg_uploads} video(s) to complete registration (Current number received: {videos_uploaded})."),
 	types.USER_IN_CHAT: em("You're already in the {bot_name} lounge."),
 	types.USER_NOT_IN_CHAT: em("You're not in the {bot_name} lounge yet. Use /start to join!"),
 	types.GIVEN_COOLDOWN: lambda deleted, **_:

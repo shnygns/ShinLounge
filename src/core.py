@@ -246,9 +246,10 @@ def registerReceiver(obj):
 
 
 def user_join(c_user):
+	reg_uploads = config.get("reg_uploads", 5) 
+	media_hours = config.get("media_hours", None)
+	videos_uploaded=0
 	try:
-		reg_uploads = config.get("reg_uploads", 5) 
-		media_hours = config.get("media_hours")
 		user = db.getUser(id=c_user.id)
 	except KeyError as e:
 		user = None
@@ -265,25 +266,32 @@ def user_join(c_user):
 				updateUserFromEvent(user, c_user)
 				user.setLeft(False)
 			logging.info("%s rejoined chat", user)
-			bot.send_message(c_user.id, f"Welcome back! As a reminder, you need to post a vid every {media_hours} hours to stay live.")
+			bot.send_message(c_user.id, f"<em>Welcome back! As a reminder, you need to post a vid every {media_hours} hours to stay live.</em>", parse_mode="HTML")
 
 
 		# SHIN UPDATE - Prompt user to upload {reg_upload} number of videos to register
-		if not user.registered:
-			# Check if user has uploaded enough videos to register
+		if user.rank == RANKS.admin:
+			bot.send_message(user.id, f"<em>Welcome. You are the admin and life is good. Obviously, you are the balls! The chat is ready for you to invite users.</em>", parse_mode="HTML")
+		# Check if user has uploaded enough videos to register
+		elif not user.registered:
 			if not reg_uploads or (reg_uploads > 0 and user.media_count > reg_uploads):
 				user.registered = datetime.datetime.utcnow()
 				logging.info(f"User {user.id} - {user.chat_username} has been registered due to posting {reg_uploads} or more video messages.")
-				bot.send_message(user.id, "Welcome back!  You are now registered, and will see messages from the group.")
-				bot.send_message(c_user.id, f"Just a reminder, you need to post a video every {media_hours} hours to stay live.")
+				bot.send_message(user.id, "<em>Welcome! You are now registered, and will see messages from the group.</em>", parse_mode="HTML")
+				if media_hours:
+					bot.send_message(c_user.id, f"<em>Just a reminder, you need to post a video every {media_hours} hours to stay live.</em>", parse_mode="HTML")
 
-				# Check if the user is required to upload videos, and the number of videos yet uploaded in not enough
-			elif reg_uploads and reg_uploads > 0 and user.media_count < reg_uploads:
-				bot.send_message(c_user.id, f"Welcome back!  Please upload {reg_uploads} video(s) to complete registration (Current number received: {videos_uploaded}).")
+			# Check if the user is required to upload videos, and the number of videos yet uploaded in not enough
+			elif user.rank != RANKS.admin and reg_uploads and reg_uploads > 0 and user.media_count < reg_uploads:
+				bot.send_message(c_user.id, f"<em>Welcome! Please upload {reg_uploads} video(s) to complete registration (Current number received: {videos_uploaded}).</em>", parse_mode="HTML")
+		else:
+			bot.send_message(c_user.id, "<em>Welcome! You are registered, and will see messages from the group.</em>", parse_mode="HTML")
+			if media_hours:
+				bot.send_message(c_user.id, f"<em>Just a reminder, you need to post a video every {media_hours} hours to stay live.</em>", parse_mode="HTML")
 
 		# SHIN UPDATE - make sure user has username
 		if not user.chat_username:
-			bot.send_message(c_user.id, "But first, you don't have a username set. Please enter a username to use in the chat.")
+			bot.send_message(c_user.id, "<em>But first, you don't have a username set. Please enter a username to use in the chat.</em>", parse_mode="HTML")
 			bot.register_next_step_handler_by_chat_id(c_user.id, get_username, user)
 		
 		#If user cannot rejoin, return error message
@@ -302,43 +310,60 @@ def user_join(c_user):
 	user.id = c_user.id
 	updateUserFromEvent(user, c_user)
 
-	# Prompt user to upload {reg_upload} numver of videos to register
-	if reg_uploads and reg_uploads > 0:
-		bot.send_message(c_user.id, f"Welcome to the media bot. You will need to upload {reg_uploads} video(s) to complete registration (Current number received: {videos_uploaded}).")
-		bot.send_message(c_user.id, f"Once you are registered, you need to post a vid every {media_hours} hours to stay live.")
-
-	# Prompt for username
-	bot.send_message(c_user.id, "But first, please enter a username to use in the chat.")
-
-    # Register a handler to capture the next message as the username
-	bot.register_next_step_handler_by_chat_id(c_user.id, get_username, user)
 	ret = []
+	bot.send_message(c_user.id, f"<em>You joined the media bot lounge!</em>", parse_mode="HTML")
 	if not any(db.iterateUserIds()):
 		user.rank = RANKS.admin
-		ret.append(rp.Reply(rp.types.CHAT_JOIN_FIRST, bot_name=bot_name))
+		user.registered = datetime.utcnow()
+		reply_message = (
+			f"<em>Since you are the first user that joined {bot_name}, you were made an admin automatically. Press /help to see all available commands.\n" +
+			"In case you have yet to set up the commands menu for your bot you can simply use /setup_commands once to register a set of default commands.\n" +
+			"\n" +
+			"You can define most necessary settings in the configuration file. Don't forget to set up a welcome message using /rules.\n" +
+			"Have fun using catlounge-ng-meow and don't forget to leave us a star on GitHub! 😉</em>"
+		)
+		bot.send_message(c_user.id, reply_message, parse_mode="HTML")
+		# ret.append(rp.Reply(rp.types.CHAT_JOIN_FIRST, bot_name=bot_name))
+	else:
+
+		# Prompt user to upload {reg_upload} numver of videos to register
+		if reg_uploads and reg_uploads > 0:
+			bot.send_message(c_user.id, f"<em>Welcome to the media bot. You will need to upload {reg_uploads} video(s) to complete registration (Current number received: {videos_uploaded}).</em>", parse_mode="HTML")
+			if media_hours:
+				bot.send_message(c_user.id, f"<em>Once you are registered, you need to post a vid every {media_hours} hours to stay live.</em>", parse_mode="HTML")
+
+	# Prompt for username
+	bot.send_message(c_user.id, "<em>But first, please enter a username to use in the chat.</em>", parse_mode="HTML")
+
+	# Register a handler to capture the next message as the username
+	bot.register_next_step_handler_by_chat_id(c_user.id, get_username, user)
+
+	#motd = db.getSystemConfig().motd
+	#if motd != "":
+	#	bot.send_message(c_user.id, rp.types.CUSTOM, parse_mode="HTML")
+		# ret.append(rp.Reply(rp.types.CUSTOM, text=motd))
 
 	logging.info("%s joined chat", user)
 	db.addUser(user)
-	ret.insert(0, rp.Reply(rp.types.CHAT_JOIN, bot_name=bot_name))
-
-	motd = db.getSystemConfig().motd
-	if motd != "":
-		ret.append(rp.Reply(rp.types.CUSTOM, text=motd))
-
-	return ret
+	return
 
 def get_username(message, user):
-    chat_username = message.text.strip()
-    if not chat_username:
-        chat_username = generate_username()  # Generate a random username if none is provided
+	chat_username = message.text.strip()
+	if not chat_username:
+		chat_username = generate_username()  # Generate a random username if none is provided
 
-    # Save the username and add the user to the database
-    user.chat_username = chat_username
-    db.setUser(user.id, user)
-    logging.info("%s updated username to %s", user, chat_username) 
+	# Save the username and add the user to the database
+	user.chat_username = chat_username
+	db.setUser(user.id, user)
+	logging.info("%s updated username to %s", user, chat_username) 
 	# Prompt for username
-    bot.send_message(user.id, f"Great. Your chat username will be {chat_username}. You are free to upload media and register.")
-    return
+	bot.send_message(user.id, f"<em>Great. Your chat username will be <strong>{chat_username}.</strong></em>", parse_mode="HTML")
+	if user.rank == RANKS.admin:
+		bot.send_message(user.id, f"<em>You can now invite other users to join the bot.</em>", parse_mode="HTML")
+	else:
+		bot.send_message(user.id, f"<em>You are free to upload media and register.</em>", parse_mode="HTML")
+	#return rp.Reply(rp.types.CHAT_JOIN, bot_name=bot_name)
+	return None
 
 def generate_username():
     adjectives = [

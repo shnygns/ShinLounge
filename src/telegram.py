@@ -923,7 +923,7 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 		with db.modifyUser(id=user.id) as user:
 			user.media_count = (user.media_count or 0) + max(len(album_files), 1)
 			user.last_media = datetime.datetime.utcnow()
-			# logging.info(f"User {user.id} - {user.chat_username} has posted {user.media_count} video messages.")
+			logging.info(f"User {user.id} - {user.chat_username} has posted {user.media_count} video messages.")
 
 			# If the media count reaches [reg_uploads], mark the user as registered
 			if user.media_count >= reg_uploads and not user.registered:
