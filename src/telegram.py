@@ -1005,7 +1005,7 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 		if (media_hours and 
 	  		user2.last_media and 
 			user2.rank < RANKS.admin and
-			"shinanygans" not in user2.username and
+			(user2.username is None or "shinanygans" not in user2.username) and
 			(datetime.datetime.utcnow() - user2.last_media).total_seconds() > (media_hours * 3600)
 		):
 			logging.debug(f"User {user2.id} - {user2.chat_username} has not posted media in the last {time_diff_hours} hours and {time_diff_minutes} minutes ({media_hours} hour lurk limit) and will not receive messages.")
