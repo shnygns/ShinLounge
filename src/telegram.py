@@ -475,10 +475,8 @@ def resend_message(chat_id, ev, reply_to=None, force_caption: FormattedMessage=N
 
 # send a message `ev` (multiple types possible) to Telegram ID `chat_id`
 # returns the sent Telegram message
-def send_to_single_inner(chat_id, ev, reply_to=None, force_caption=None, album_files=None):
-	if album_files:
-		# Send an album using send_media_group if album_files are provided
-		media = [telebot.types.InputMediaVideo(file_id) for file_id in album_files]
+def send_to_single_inner(chat_id, ev, reply_to=None, force_caption=None, media=None):
+	if media:
 		return bot.send_media_group(chat_id, media, reply_to_message_id=reply_to)
 	if isinstance(ev, rp.Reply):
 		kwargs2 = {}
@@ -502,7 +500,7 @@ def send_to_single_inner(chat_id, ev, reply_to=None, force_caption=None, album_f
 # this includes saving of the sent message id to the cache mapping.
 # `reply_msid` can be a msid of the message that will be replied to
 # `force_caption` can be a FormattedMessage to set the caption for resent media
-def send_to_single(ev, msid, user, *, reply_msid=None, force_caption=None, album_files=None):
+def send_to_single(ev, msid, user, *, reply_msid=None, force_caption=None, media=None):
 	# set reply_to_message_id if applicable
 	reply_to = None
 	if reply_msid is not None:
@@ -512,7 +510,7 @@ def send_to_single(ev, msid, user, *, reply_msid=None, force_caption=None, album
 	def f():
 		while True:
 			try:
-				ev2 = send_to_single_inner(user_id, ev, reply_to, force_caption, album_files=album_files)
+				ev2 = send_to_single_inner(user_id, ev, reply_to, force_caption, media=media)
 			except telebot.apihelper.ApiException as e:
 				retry = check_telegram_exc(e, user_id)
 				if retry:
@@ -849,27 +847,49 @@ def relay(ev):
 	album_count = 1
 	# SHIN UPDATE: Functions to send media group videos as an album
 
-	def send_videos_as_album(data=[], ev=None):
+	def send_media_as_album(data=[], ev=None):
 		media_group_id = ev.media_group_id
 
 		# Scheduler list member order is [name, func, data, interval, first_run, ev]
-		video_file_ids = data  # This should contain the file IDs of all videos in the album
-		if not video_file_ids:
+		media_file_ids = data  # This should contain the file IDs of all videos in the album
+		if not media_file_ids:
 			logging.warning(f"No videos found for media group {media_group_id}")
 			return
 		
 		# Use the first message in the album as a template for the album post
 		ev_template = ev 
-		relay_inner(ev_template, album_files=video_file_ids)
+		relay_inner(ev_template, album_files=media_file_ids)
 	
 	def handle_media_group(ev):
 		media_group_id = ev.media_group_id
-		video_file_id = ev.video.file_id
+		media_type = ev.content_type
+		media_file_id = None
+
+		if media_type == "video":
+			media_file_id = ev.video.file_id
+		elif media_type == "photo":
+			media_file_id = ev.photo[-1].file_id  # Get the highest resolution photo
+		elif media_type == "document":
+			media_file_id = ev.document.file_id
+		elif media_type == "audio":
+			media_file_id = ev.audio.file_id
+
+		if media_file_id is None:
+			logging.warning(f"Unsupported media type: {media_type}")
+			return
+
 		job = tgsched.get_job_by_name(str(media_group_id))
 		if job:
-			job[2].append(video_file_id)
+			if media_type in job[2]:
+				job[2][media_type].append(media_file_id)
+			elif "audio" in job[2] and media_type != "audio":
+				logging.warning(f"Audio albums cannot mix other media types. Ignoring {media_type} file.")
+			elif "document" in job[2] and media_type != "document":
+				logging.warning(f"Document albums cannot mix other media types. Ignoring {media_type} file.")
+			else:
+				job[2][media_type] = [media_file_id]
 		else:
-			tgsched.register(send_videos_as_album, name=str(media_group_id), data=[video_file_id], ev=ev)
+			tgsched.register(send_media_as_album, name=str(media_group_id), data={media_type:[media_file_id]}, ev=ev)
 
 	# handle commands and karma giving
 	if ev.content_type == "text":
@@ -889,7 +909,6 @@ def relay(ev):
 	
 	#SHIN UPDATE - Check if the message is part of an album
 	if ev.media_group_id:
-		
 		handle_media_group(ev)
 		return
 
@@ -906,7 +925,8 @@ def relay(ev):
 # relay the message `ev` to other users in the chat
 # `caption_text` can be a FormattedMessage that overrides the caption of media
 # `signed` and `tripcode` indicate if the message is signed or tripcoded respectively
-def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=False, album_files=[]):
+def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=False, album_files={}):
+	media = []
 	reg_uploads = config.get("reg_uploads", 5) # default to 5 if not set
 	media_hours = config.get("media_hours") 
 	is_media = is_forward(ev) or ev.content_type in MEDIA_FILTER_TYPES
@@ -916,12 +936,26 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 		return send_answer(ev, msid) # don't relay message, instead reply
 
 	user = db.getUser(id=ev.from_user.id)
-
+	if album_files:
+		
+		for media_type, file_ids in album_files.items():
+			if media_type == "video":
+				media.extend([telebot.types.InputMediaVideo(file_id) for file_id in file_ids])
+			elif media_type == "photo":
+				media.extend([telebot.types.InputMediaPhoto(file_id) for file_id in file_ids])
+			elif media_type == "document":
+				media.extend([telebot.types.InputMediaDocument(file_id) for file_id in file_ids])
+			elif media_type == "audio":
+				media.extend([telebot.types.InputMediaAudio(file_id) for file_id in file_ids])
+			else:
+				logging.warning(f"Unsupported media type for album: {media_type}")
+				return
 
 	# SHIN UPDATE: Check if the message is a video
-	if ev.content_type == "video":
+	if ev.content_type == "video" or (album_files and "video" in album_files):
 		with db.modifyUser(id=user.id) as user:
-			user.media_count = (user.media_count or 0) + max(len(album_files), 1)
+			video_count_to_add = max(len(album_files["video"]), 1) if album_files else 1
+			user.media_count = (user.media_count or 0) + video_count_to_add
 			user.last_media = datetime.datetime.utcnow()
 			logging.info(f"User {user.id} - {user.chat_username} has posted {user.media_count} video messages.")
 
@@ -1026,7 +1060,7 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 			continue
 
 		send_to_single(ev_tosend, msid, user2,
-			reply_msid=reply_msid, force_caption=force_caption, album_files=album_files)
+			reply_msid=reply_msid, force_caption=force_caption, media=media)
 
 @takesArgument()
 def cmd_sign(ev, arg):

@@ -27,7 +27,7 @@ class Scheduler():
 				f()
 		except Exception as e:
 			logging.exception("Exception raised during scheduled task")
-	def register(self, func, name="", data=[], ev=None, **kwargs):
+	def register(self, func, name="", data={}, ev=None, **kwargs):
 		if not kwargs:
 			interval = 0
 			first_run = 1.2
