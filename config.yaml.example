@@ -9,6 +9,15 @@ database: [sqlite, "secretlounge.sqlite"]
 # defaults to true
 #reg_open: true
 
+# Number of media uploads needed to register in the group
+reg_uploads: 5
+
+# Number of hours a user will receive messages after uploading media
+media_hours: 6
+
+#Pack media into albums of 10 regardless of how they are sent
+media_packing: true
+
 # relay contacts
 allow_contacts: false
 # relay arbitrary documents/files (GIFs always work)

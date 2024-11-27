@@ -845,21 +845,41 @@ def get_album_messages(media_group_id):
 
 def relay(ev):
 	album_count = 1
+	media_packing = config.get("media_packing", True) 
 	# SHIN UPDATE: Functions to send media group videos as an album
 
-	def send_media_as_album(data=[], ev=None):
+	def send_media_as_album(data=None, ev=None):
 		media_group_id = ev.media_group_id
-
 		# Scheduler list member order is [name, func, data, interval, first_run, ev]
-		media_file_ids = data  # This should contain the file IDs of all videos in the album
-		if not media_file_ids:
+		if not data:
 			logging.warning(f"No videos found for media group {media_group_id}")
 			return
 		
 		# Use the first message in the album as a template for the album post
 		ev_template = ev 
-		relay_inner(ev_template, album_files=media_file_ids)
-	
+		relay_inner(ev_template, album_files=data)
+
+	def send_packed_media_as_album(data=None, ev=None):
+		# Process up to 10 media files, and send them as an album
+		# If there is remainder media upon job execution, remainder should be sent to a newly registered job
+		if not data or not isinstance(data, list):
+			logging.error(f"Data absent or unexpected data structure for media group job: {data}")
+			return
+		media_files_to_send = data[:10]
+		if len(media_files_to_send) == 1:
+			# If there is only one media file, send it as a single message
+			relay_inner(ev, album_files=[])
+			return
+
+		remaining_media_files = data[10:]
+
+		if remaining_media_files:
+			tgsched.register(send_packed_media_as_album, name="media_packing", data=remaining_media_files, ev=ev)
+
+
+
+		relay_inner(ev, album_files=media_files_to_send)
+
 	def handle_media_group(ev):
 		media_group_id = ev.media_group_id
 		media_type = ev.content_type
@@ -880,17 +900,39 @@ def relay(ev):
 
 		job = tgsched.get_job_by_name(str(media_group_id))
 		if job:
-			if media_type in job[2]:
-				job[2][media_type].append(media_file_id)
-			elif "audio" in job[2] and media_type != "audio":
+			if not isinstance(job[2], list):
+				logging.error(f"Unexpected data structure for media group job: {job[2]}")
+				return
+			job_data = job[2]
+			media_types_in_job = [i['media_type'] for i in job_data]
+			if 'audio' in media_types_in_job and media_type != 'audio':
 				logging.warning(f"Audio albums cannot mix other media types. Ignoring {media_type} file.")
-			elif "document" in job[2] and media_type != "document":
+				return
+			elif 'document' in media_types_in_job and media_type != 'document':
 				logging.warning(f"Document albums cannot mix other media types. Ignoring {media_type} file.")
+				return
 			else:
-				job[2][media_type] = [media_file_id]
+				job_data.append({'file_id': media_file_id, 'media_type': media_type})
 		else:
-			tgsched.register(send_media_as_album, name=str(media_group_id), data={media_type:[media_file_id]}, ev=ev)
-
+			tgsched.register(send_media_as_album, name=str(media_group_id), data=[{'file_id': media_file_id, 'media_type': media_type}], ev=ev)
+		return
+	
+	def pack_media(ev):
+		# Register or add to a tsched job that will assemble media in groups of 10 and then post them as an album
+		# If there is remainder media upon job execution, remainder should be sent to a newly registered job
+		media_type = ev.content_type
+		if media_type == "video":
+			media_file_id = ev.video.file_id
+		elif media_type == "photo":
+			media_file_id = ev.photo[-1].file_id  # Get the highest resolution photo
+		job = tgsched.get_job_by_name("media_packing")
+		if job:
+			job_data = job[2]
+			job_data.append({'file_id': media_file_id, 'media_type': media_type})
+		else:
+			tgsched.register(send_packed_media_as_album, name="media_packing", data=[{'file_id': media_file_id, 'media_type': media_type}], ev=ev)
+		return
+	
 	# handle commands and karma giving
 	if ev.content_type == "text":
 		if ev.text.startswith("/"):
@@ -908,7 +950,10 @@ def relay(ev):
 			return send_answer(ev, rp.Reply(rp.types.ERR_POLL_NOT_ANONYMOUS))
 	
 	#SHIN UPDATE - Check if the message is part of an album
-	if ev.media_group_id:
+	if media_packing and ev.content_type in ['video', 'photo']:
+		pack_media(ev)
+		return
+	elif ev.media_group_id:
 		handle_media_group(ev)
 		return
 
@@ -925,8 +970,10 @@ def relay(ev):
 # relay the message `ev` to other users in the chat
 # `caption_text` can be a FormattedMessage that overrides the caption of media
 # `signed` and `tripcode` indicate if the message is signed or tripcoded respectively
-def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=False, album_files={}):
+def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=False, album_files=[]):
 	media = []
+	media_types_in_album = []
+	videos_in_album = []
 	reg_uploads = config.get("reg_uploads", 5) # default to 5 if not set
 	media_hours = config.get("media_hours") 
 	is_media = is_forward(ev) or ev.content_type in MEDIA_FILTER_TYPES
@@ -937,24 +984,32 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 
 	user = db.getUser(id=ev.from_user.id)
 	if album_files:
+		if isinstance(album_files, list):
+			for album_file in album_files:
+				file_id = album_file.get('file_id')
+				media_type = album_file.get('media_type')
+				if media_type == "video":
+					media.append(telebot.types.InputMediaVideo(file_id))
+				elif media_type == "photo":
+					media.append(telebot.types.InputMediaPhoto(file_id))
+				elif media_type == "document":
+					media.append(telebot.types.InputMediaDocument(file_id))
+				elif media_type == "audio":
+					media.append(telebot.types.InputMediaAudio(file_id))
+				else:
+					logging.warning(f"Unsupported media type for album: {media_type}")
+					return
+			media_types_in_album = [file['media_type'] for file in album_files]
+			videos_in_album = [file['file_id'] for file in album_files if file['media_type'] == 'video']
+		else:
+			logging.error("album_files is not a list.")
 		
-		for media_type, file_ids in album_files.items():
-			if media_type == "video":
-				media.extend([telebot.types.InputMediaVideo(file_id) for file_id in file_ids])
-			elif media_type == "photo":
-				media.extend([telebot.types.InputMediaPhoto(file_id) for file_id in file_ids])
-			elif media_type == "document":
-				media.extend([telebot.types.InputMediaDocument(file_id) for file_id in file_ids])
-			elif media_type == "audio":
-				media.extend([telebot.types.InputMediaAudio(file_id) for file_id in file_ids])
-			else:
-				logging.warning(f"Unsupported media type for album: {media_type}")
-				return
+
 
 	# SHIN UPDATE: Check if the message is a video
-	if ev.content_type == "video" or (album_files and "video" in album_files):
+	if ev.content_type == "video" or (album_files and "video" in media_types_in_album):
 		with db.modifyUser(id=user.id) as user:
-			video_count_to_add = max(len(album_files["video"]), 1) if album_files else 1
+			video_count_to_add = max(len(videos_in_album), 1) if album_files else 1
 			user.media_count = (user.media_count or 0) + video_count_to_add
 			user.last_media = datetime.datetime.utcnow()
 			logging.info(f"User {user.id} - {user.chat_username} has posted {user.media_count} video messages.")
