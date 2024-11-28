@@ -6,7 +6,7 @@ import re
 import datetime
 import threading
 from os import path
-
+from ratelimit import limits, sleep_and_retry
 import src.core as core
 import src.replies as rp
 from src.util import MutablePriorityQueue, genTripcode, Scheduler
@@ -33,6 +33,8 @@ db = None
 ch = None
 config = None
 message_queue = None
+CALLS = 29
+RATE_LIMIT_PERIOD = 1
 registered_commands = {}
 tgsched = Scheduler()
 
@@ -475,6 +477,8 @@ def resend_message(chat_id, ev, reply_to=None, force_caption: FormattedMessage=N
 
 # send a message `ev` (multiple types possible) to Telegram ID `chat_id`
 # returns the sent Telegram message
+@sleep_and_retry
+@limits(calls=CALLS, period=RATE_LIMIT_PERIOD)
 def send_to_single_inner(chat_id, ev, reply_to=None, force_caption=None, media=None):
 	if media:
 		return bot.send_media_group(chat_id, media, reply_to_message_id=reply_to)

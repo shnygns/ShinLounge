@@ -6,6 +6,7 @@ name = "pypi"
 [packages]
 pytelegrambotapi = ">=4.7.0"
 pyyaml = ">=3.12"
+ratelimit = "*"
 
 [dev-packages]
 
