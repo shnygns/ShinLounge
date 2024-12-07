@@ -326,8 +326,11 @@ def user_join(c_user):
 		# ret.append(rp.Reply(rp.types.CHAT_JOIN_FIRST, bot_name=bot_name))
 	else:
 
+		# If reg_uploads is deactivated, register user automatically
+		if not reg_uploads:
+			user.registered = datetime.utcnow()
 		# Prompt user to upload {reg_upload} numver of videos to register
-		if reg_uploads and reg_uploads > 0:
+		elif reg_uploads > 0:
 			bot.send_message(c_user.id, f"<em>Welcome to the media bot. You will need to upload {reg_uploads} video(s) to complete registration (Current number received: {videos_uploaded}).</em>", parse_mode="HTML")
 			if media_hours:
 				bot.send_message(c_user.id, f"<em>Once you are registered, you need to post a vid every {media_hours} hours to stay live.</em>", parse_mode="HTML")

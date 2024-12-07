@@ -1019,11 +1019,14 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 			logging.info(f"User {user.id} - {user.chat_username} has posted {user.media_count} video messages.")
 
 			# If the media count reaches [reg_uploads], mark the user as registered
-			if user.media_count >= reg_uploads and not user.registered:
-				user.registered = datetime.datetime.utcnow()
-				logging.info(f"User {user.id} - {user.chat_username} has been registered due to posting {reg_uploads} or more video messages.")
-				bot.send_message(user.id, "Thank you. You are now registered, and will see messages from the group.")
-				bot.send_message(user.id, f"As a reminder, you need to post a video every {media_hours} hours to stay live.")
+			if reg_uploads and not user.registered:
+				if user.media_count >= reg_uploads:
+					user.registered = datetime.datetime.utcnow()
+					logging.info(f"User {user.id} - {user.chat_username} has been registered due to posting {reg_uploads} or more video messages.")
+					bot.send_message(user.id, "Thank you. You are now registered, and will see messages from the group.")
+					bot.send_message(user.id, f"As a reminder, you need to post a video every {media_hours} hours to stay live.")
+				elif user.media_count < reg_uploads:
+					bot.send_message(user.id, f"Thank you. Please upload {reg_uploads - user.media_count} more video messages to be registered.")
 
 
 	# for signed msgs: check user's forward privacy status first
