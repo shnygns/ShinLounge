@@ -8,11 +8,12 @@ import src.replies as rp
 from src.globals import *
 from src.database import User, SystemConfig
 from src.cache import CachedMessage
-from src.util import genTripcode, getLastModFile
+from src.util import genTripcode, getLastModFile, get_users_active_elsewhere
 
 launched = None
 
 db = None
+shared_db = None
 ch = None
 config = None
 spam_scores = None
@@ -34,11 +35,14 @@ media_limit_period = None
 sign_interval = None
 vote_up_interval = None
 vote_down_interval = None
+blacklisted = set()
+active_elsewhere = set()
+max_users = None
 
 bot = None  # Add a global variable for the bot instance
 
-def init(_config, _db, _ch, _bot):
-	global launched, db, ch, bot, config, spam_scores, reg_open, log_channel, karma_amount_add, karma_amount_remove, karma_level_names, blacklist_contact, bot_name, karma_is_pats, enable_signing, allow_remove_command, media_limit_period, sign_interval, vote_up_interval, vote_down_interval
+def init(_config, _db, _sdb, _ch, _bot, _bl, _ae):
+	global launched, db, shared_db, ch, bot, config, spam_scores, reg_open, log_channel, karma_amount_add, karma_amount_remove, karma_level_names, blacklist_contact, bot_name, karma_is_pats, enable_signing, allow_remove_command, media_limit_period, sign_interval, vote_up_interval, vote_down_interval, blacklisted, active_elsewhere, max_users
 
 	# Store bot instance
 	bot = _bot
@@ -46,6 +50,10 @@ def init(_config, _db, _ch, _bot):
 	launched = datetime.now()
 
 	db = _db
+	shared_db = _sdb
+	blacklisted = _bl
+	active_elsewhere = _ae
+	max_users = config.get("max_users", 1000)
 	ch = _ch
 	spam_scores = ScoreKeeper()
 
@@ -254,22 +262,41 @@ def user_join(c_user):
 	except KeyError as e:
 		user = None
 
+	# If the user is already in the database, meaning that they previously joined the chat...
 	if user is not None:
 		videos_uploaded = user.media_count
-		# check if user can't rejoin
+
+		# check if they are an allowed user
 		err = None
-		if user.isBlacklisted():
+		if (user.isBlacklisted() or user.id in blacklisted):
 			err = rp.Reply(rp.types.ERR_BLACKLISTED, reason=user.blacklistReason, contact=blacklist_contact)
-		# user rejoins
+
+		if user.id in active_elsewhere and user.rank < RANKS.mod:
+			err = rp.Reply(rp.types.ERR_ACTIVE_ELSEWHERE)
+
+		#If they are not an allowed user, return error message
+		if err is not None:
+			with db.modifyUser(id=user.id) as user:
+				updateUserFromEvent(user, c_user)
+			return err
+		
+		# This is an allowed user. If they are not currently joined and are trying to rejoin...
 		if not user.isJoined():
+			# ...see if there is room at the inn...
+			if db.count_active_users() >= max_users:
+				err = rp.Reply(rp.types.ERR_CHAT_FULL)
+				updateUserFromEvent(user, c_user)
+				return err
+
+			# ...if the lounge is not full, let them back in.
 			with db.modifyUser(id=user.id) as user:
 				updateUserFromEvent(user, c_user)
 				user.setLeft(False)
 			logging.info("%s rejoined chat", user)
 			bot.send_message(c_user.id, f"<em>Welcome back! As a reminder, you need to post a vid every {media_hours} hours to stay live.</em>", parse_mode="HTML")
+			return
 
-
-		# SHIN UPDATE - Prompt user to upload {reg_upload} number of videos to register
+		# If the user is already joined, send them registration status and make sure they have a username
 		if user.rank == RANKS.admin:
 			bot.send_message(user.id, f"<em>Welcome. You are the admin and life is good. Obviously, you are the balls! The chat is ready for you to invite users.</em>", parse_mode="HTML")
 		# Check if user has uploaded enough videos to register
@@ -293,18 +320,17 @@ def user_join(c_user):
 		if not user.chat_username:
 			bot.send_message(c_user.id, "<em>But first, you don't have a username set. Please enter a username to use in the chat.</em>", parse_mode="HTML")
 			bot.register_next_step_handler_by_chat_id(c_user.id, get_username, user)
-		
-		#If user cannot rejoin, return error message
-		if err is not None:
-			with db.modifyUser(id=user.id) as user:
-				updateUserFromEvent(user, c_user)
-			return err
 		return 
 	
+	# If, however, the user is brand new and has not previuosly joined the chat, first check if registration is open...
 	if not reg_open:
 		return rp.Reply(rp.types.ERR_REG_CLOSED)
+	
+	# If the chat is full, return error message
+	if db.count_active_users() >= max_users:
+		return rp.Reply(rp.types.ERR_CHAT_FULL)
 
-	# create new user
+	# Then, create new user
 	user = User()
 	user.defaults()
 	user.id = c_user.id
@@ -391,8 +417,12 @@ def generate_username():
 
 
 def force_user_leave(user_id, blocked=True):
+	global active_elsewhere
 	with db.modifyUser(id=user_id) as user:
 		user.setLeft()
+		if shared_db is not None:
+			shared_db.user_left_chat(user.id)
+			active_elsewhere = get_users_active_elsewhere(shared_db, config)
 	if blocked:
 		logging.warning("Force leaving %s because bot is blocked", user)
 	Sender.stop_invoked(user)
@@ -740,13 +770,13 @@ def uncooldown_user(user, oid2=None, username2=None):
 
 @requireUser
 @requireRank(RANKS.mod)
-def blacklist_user(user, msid, reason, del_all=False):
+def blacklist_user(user, msid, reason, del_all=False, univ=False):
 	cm = ch.getMessage(msid)
 	if cm is None or cm.user_id is None:
 		return rp.Reply(rp.types.ERR_NOT_IN_CACHE)
 
 	with db.modifyUser(id=cm.user_id) as user2:
-		if user2.rank >= user.rank:
+		if user2.rank >= user.rank and not univ:
 			return
 		user2.setBlacklisted(reason)
 	cm.warned = True
@@ -754,6 +784,13 @@ def blacklist_user(user, msid, reason, del_all=False):
 	_push_system_message(
 		rp.Reply(rp.types.ERR_BLACKLISTED, reason=reason, contact=blacklist_contact),
 		who=user2, reply_to=msid)
+	
+	#SHIN-PROVEMENT: Record ban to universal database
+	if shared_db is not None:
+		global blacklisted
+		shared_db.universal_ban_user(user2.id)
+		blacklisted.add(user2.id)
+
 	if del_all:
 		msgs = ch.getMessages(cm.user_id)
 		for cm2 in msgs:
@@ -764,6 +801,22 @@ def blacklist_user(user, msid, reason, del_all=False):
 		Sender.delete([msid])
 		logging.info("%s was blacklisted by %s for: %s", user2, user, reason)
 		return rp.Reply(rp.types.SUCCESS_BLACKLIST, id=user2.getObfuscatedId())
+
+
+@requireUser
+@requireRank(RANKS.mod)
+def whitelist_user(user, msid):
+	cm = ch.getMessage(msid)
+	if cm is None or cm.user_id is None:
+		return rp.Reply(rp.types.ERR_NOT_IN_CACHE)
+
+	with db.modifyUser(id=cm.user_id) as user2:
+		if user2.rank >= user.rank:
+			return
+		shared_db.whitelist_user(user2.id)
+	logging.info("%s was whitelisted by %s", user2, user)
+	return rp.Reply(rp.types.SUCCESS_WHITELIST, id=user.getObfuscatedId())
+
 
 @requireUser
 def modify_karma(user, msid, amount):

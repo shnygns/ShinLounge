@@ -2,8 +2,24 @@ import cmd
 import re
 import math
 from string import Formatter
-
+import importlib
 from src.globals import *
+
+
+SharedDBLibraryPath = "../ShinLoungeHub/shared_database.py"
+SharedDatabase = None
+
+# Check if the file exists
+if path.isfile(SharedDBLibraryPath):
+	# Load the module dynamically
+	spec = importlib.util.spec_from_file_location("shared_database", SharedDBLibraryPath)
+	shared_database_module = importlib.util.module_from_spec(spec)
+	spec.loader.exec_module(shared_database_module)
+
+	# Import the SharedDatabase class
+	SharedDatabase = getattr(shared_database_module, "SharedDatabase", None)
+	if SharedDatabase is None:
+		raise ImportError("SharedDatabase class not found in the specified module.")
 
 class NumericEnum(Enum):
 	def __init__(self, names):
@@ -40,6 +56,7 @@ types = NumericEnum([
 	"SUCCESS_WARN_DELETEALL",
 	"SUCCESS_BLACKLIST",
 	"SUCCESS_BLACKLIST_DELETEALL",
+	"SUCCESS_WHITELIST",
 	"LOG_CHANNEL",
 	"COMMANDS",
 	"BOOLEAN_CONFIG",
@@ -79,6 +96,8 @@ types = NumericEnum([
 	"ERR_NOT_IN_COOLDOWN",
 	"ERR_COOLDOWN",
 	"ERR_BLACKLISTED",
+	"ERR_ACTIVE_ELSEWHERE",
+	"ERR_CHAT_FULL",
 	"ERR_ALREADY_VOTED_UP",
 	"ERR_ALREADY_VOTED_DOWN",
 	"ERR_VOTE_OWN_MESSAGE",
@@ -152,6 +171,7 @@ format_strs = {
 		"☑ <b>{id}</b> <i>has been warned" + (" (cooldown: {cooldown})" if cooldown is not None else "") + " and all {count} messages were deleted</i>",
 	types.SUCCESS_BLACKLIST: "☑ <b>{id}</b> <i>has been blacklisted and the message was deleted</i>",
 	types.SUCCESS_BLACKLIST_DELETEALL: "☑ <b>{id}</b> <i>has been blacklisted and all {count} messages were deleted</i>",
+	types.SUCCESS_WHITELIST: "☑ <b>{id}</b> <i>has been whitelisted for all lounges.</i>",
 	types.LOG_CHANNEL: "catlounge-ng-meow v{version} started\n"+
 						"This is the log channel for: <b>{bot_name}</b> lounge",
 	types.COMMANDS: lambda cmds, **_:
@@ -230,6 +250,8 @@ format_strs = {
 	types.ERR_ALREADY_WARNED: em("A warning has already been issued for this message."),
 	types.ERR_INVALID_DURATION: em("You entered an invalid cooldown duration."),
 	types.ERR_NOT_IN_COOLDOWN: em("This user is not in a cooldown right now."),
+	types.ERR_ACTIVE_ELSEWHERE: em("Users can only be in one lounge at a time. To join here, leave any other lounge first, and wait 10 min for the system to update."),
+	types.ERR_CHAT_FULL: em("Sorry, the chat is full right now. Please try again later."),
 	types.ERR_BLACKLISTED: lambda reason, contact, **_:
 		em( "You've been blacklisted" + (reason and " for {reason!x}" or "") )+
 		( em("\ncontact:") + " {contact}" if contact else "" ),
@@ -358,7 +380,10 @@ format_strs = {
 			"	/mod USERNAME" +           " - <i>Promote a user to mod</i>\n" +
 			"	/admin USERNAME" +         " - <i>Promote a user to admin</i>\n" +
 			"	/commands COMMANDS" +      " - <i>Change bot commands</i>\n"
-		if rank >= RANKS.admin else "")
+		if rank >= RANKS.admin else "")  +
+			(
+			"	/whitelist" +          " - <i>Whitelist user for all lounges</i>\n"
+		if rank >= RANKS.admin and SharedDatabase else "")
 		if rank is not None else ""),
 	types.KARMA_INFO: lambda karma, karma_is_pats, level_karma, next_level_karma, **_:
 		"<b>Your level:</b> <i>{level_name}</i>\n" +

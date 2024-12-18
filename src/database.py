@@ -263,6 +263,7 @@ class JSONDatabase(Database):
 	def iterateUserIds(self):
 		with self.lock:
 			l = list(u["id"] for u in self.db["users"])
+			print(l)
 		yield from l
 	def getSystemConfig(self):
 		with self.lock:
@@ -414,3 +415,9 @@ CREATE TABLE IF NOT EXISTS `users` (
 		with self.lock:
 			for k, v in d.items():
 				self.db.execute(sql, (k, v))
+	# return count of users where joined is not null and left is null
+	def count_active_users(self):
+		sql = "SELECT COUNT(*) FROM users WHERE joined IS NOT NULL AND left IS NULL"
+		with self.lock:
+			cur = self.db.execute(sql)
+			return cur.fetchone()[0]

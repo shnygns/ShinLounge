@@ -9,8 +9,12 @@ from os import path
 from ratelimit import limits, sleep_and_retry
 import src.core as core
 import src.replies as rp
-from src.util import MutablePriorityQueue, genTripcode, Scheduler
+from src.util import MutablePriorityQueue, genTripcode, Scheduler, get_users_active_elsewhere
 from src.globals import *
+
+
+SharedDBLibraryPath = "../ShinLoungeHub/shared_database.py"
+current_folder_name = path.basename(path.dirname(path.realpath(__file__)))
 
 # module constants
 MEDIA_FILTER_TYPES = ("photo", "animation", "document", "video", "sticker")
@@ -29,22 +33,26 @@ VENUE_PROPS = ("title", "address", "foursquare_id", "foursquare_type", "google_p
 
 # module variables
 bot = None
+me = None
 db = None
+shared_db = None
 ch = None
 config = None
 message_queue = None
-CALLS = 29
+CALLS = 25
 RATE_LIMIT_PERIOD = 1
 registered_commands = {}
 tgsched = Scheduler()
+blacklisted = set()
+active_elsewhere = set()
 
 # settings
 allow_documents = None
 allow_polls = None
 linked_network: dict = None
 
-def init(_config, _db, _ch, _bot):
-	global bot, db, ch, config, message_queue, allow_documents, allow_polls, linked_network, tgsched
+def init(_config, _db, _sdb, _ch, _bot, _bl, _ae):
+	global bot, db, shared_db, ch, config, message_queue, allow_documents, allow_polls, linked_network, tgsched, blacklisted, me, active_elsewhere
 	if _config["bot_token"] == "":
 		logging.error("No telegram token specified.")
 		exit(1)
@@ -66,7 +74,11 @@ def init(_config, _db, _ch, _bot):
 	# SHIN UPDATE: Bot is now initialized in secretlounge-ng and passed to telegram.init()
 	# bot = telebot.TeleBot(config["bot_token"], threaded=False)
 	bot = _bot
+	me = bot.get_me()
 	db = _db
+	shared_db = _sdb
+	blacklisted = _bl
+	active_elsewhere = _ae
 	ch = _ch
 	config = _config
 	message_queue = MutablePriorityQueue()
@@ -97,7 +109,7 @@ def init(_config, _db, _ch, _bot):
 		"mod", "admin",
 		"warn", "delete", "deleteall", "remove", "removeall",
 		"cooldown", "uncooldown",
-		"blacklist", "cleanup",
+		"blacklist", "whitelist", "cleanup",
 		"s", "sign", "tripcode", "t", "tsign", "ksign", "ks"
 	]
 
@@ -148,7 +160,10 @@ def register_tasks(sched):
 		message_queue.delete(f)
 		if n > 0:
 			logging.warning("Failed to deliver %d messages before they expired from cache.", n)
+
+	#SHIN-PROVEMENT: Add a task to check for users recoreded in the hub database every hour
 	sched.register(task, hours=6) # (1/4) * cache duration
+		
 
 # Wraps a telegram user in a consistent class (used by core.py)
 class UserContainer():
@@ -385,6 +400,7 @@ def get_priority_for(user):
 
 def put_into_queue(user, msid, f):
 	message_queue.put(get_priority_for(user), QueueItem(user, msid, f))
+
 
 def send_thread():
 	while True:
@@ -825,6 +841,17 @@ def cmd_blacklist(ev, arg):
 		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
 	return send_answer(ev, core.blacklist_user(c_user, reply_msid, arg, True), True)
 
+
+def cmd_whitelist(ev):
+	c_user = UserContainer(ev.from_user)
+	if ev.reply_to_message is None:
+		return send_answer(ev, rp.Reply(rp.types.ERR_NO_REPLY), True)
+	reply_msid = ch.lookupMapping(ev.from_user.id, data=ev.reply_to_message.message_id)
+	if reply_msid is None:
+		return send_answer(ev, rp.Reply(rp.types.ERR_NOT_IN_CACHE), True)
+	return send_answer(ev, core.whitelist_user(c_user, reply_msid), True)	
+
+
 def reaction(ev, modifier):
 	c_user = UserContainer(ev.from_user)
 	if ev.reply_to_message is None:
@@ -845,11 +872,27 @@ def get_album_messages(media_group_id):
             album_messages.append(update.message)
     return album_messages
 
-
+def check_user_active_silently(user_id):
+    try:
+        bot.send_chat_action(user_id, "typing")
+        return True  # User is active
+    except telebot.ApiTelegramException as e:
+        if "forbidden" in str(e).lower() or "chat not found" in str(e).lower():
+            logging.info(f"User {user_id} has exited the DM with the bot.")
+            return False  # User is no longer active
+        else:
+            logging.exception("Unexpected error while checking user activity.")
+            return False
 
 def relay(ev):
 	album_count = 1
 	media_packing = config.get("media_packing", True) 
+	user = ev.from_user
+	if user and shared_db:
+		user_id = user.id
+		user_full_name = user.full_name
+		user_username = user.username
+		shared_db.update_user(user_id, user_full_name, user_username, me.username, config["bot_token"])
 	# SHIN UPDATE: Functions to send media group videos as an album
 
 	def send_media_as_album(data=None, ev=None):
@@ -874,14 +917,9 @@ def relay(ev):
 			# If there is only one media file, send it as a single message
 			relay_inner(ev, album_files=[])
 			return
-
 		remaining_media_files = data[10:]
-
 		if remaining_media_files:
 			tgsched.register(send_packed_media_as_album, name="media_packing", data=remaining_media_files, ev=ev)
-
-
-
 		relay_inner(ev, album_files=media_files_to_send)
 
 	def handle_media_group(ev):
@@ -934,7 +972,7 @@ def relay(ev):
 			job_data = job[2]
 			job_data.append({'file_id': media_file_id, 'media_type': media_type})
 		else:
-			tgsched.register(send_packed_media_as_album, name="media_packing", data=[{'file_id': media_file_id, 'media_type': media_type}], ev=ev)
+			tgsched.register(send_packed_media_as_album, name="media_packing", data=[{'file_id': media_file_id, 'media_type': media_type}], ev=ev, first_run = 1)
 		return
 	
 	# handle commands and karma giving
@@ -1075,6 +1113,19 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 	logging.debug("relay(): msid=%d reply_msid=%r", msid, reply_msid)
 	for user2 in db.iterateUsers():
 
+		#SHIN-PROVEMENT - If user is ont he universal blacklist, also blacklist locally
+
+		if user2.id in blacklisted:
+			logging.debug(f"User {user2.id} - {user2.chat_username} is universally blacklisted and will not receive messages.")
+			# Uncomment the two lines below to blacklist locally
+			# user2.setBlacklisted("UNIVERSAL")
+			# core.Sender.stop_invoked(user2, True) # do this before queueing new messages below
+			continue
+
+		if user2.id in active_elsewhere:
+			logging.debug(f"User {user2.id} - {user2.chat_username} is active in another lounge and will not receive messages.")
+			continue
+
 		if not user2.isJoined():
 			logging.debug(f"User {user2.id} - {user2.chat_username} is not joined and will not receive messages.")
 			continue
@@ -1082,6 +1133,10 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 		# SHIN UPDATE - Skip relaying messages to users who are not registered
 		if not user2.registered:
 			logging.debug(f"User {user2.id} - {user2.chat_username} is not registered and will not receive messages.")
+			# SHIN UPDATE - Check if the unregistered user is still active in the chat
+			if not check_user_active_silently(user2.id):
+				logging.debug(f"User {user2.id} - {user2.chat_username} is not active in the chat and will not receive messages.")
+				core.force_user_leave(user2.id)
 			continue
 
 		# SHIN UPDATE - Calculate in hours and minutes the time between the last media post and the current message
@@ -1105,6 +1160,11 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 			(datetime.datetime.utcnow() - user2.last_media).total_seconds() > (media_hours * 3600)
 		):
 			logging.debug(f"User {user2.id} - {user2.chat_username} has not posted media in the last {time_diff_hours} hours and {time_diff_minutes} minutes ({media_hours} hour lurk limit) and will not receive messages.")
+
+			# SHIN UPDATE - Check if the lurking user is still active in the chat
+			if not check_user_active_silently(user2.id):
+				logging.debug(f"User {user2.id} - {user2.chat_username} is not active in the chat and will not receive messages.")
+				core.force_user_leave(user2.id)
 			continue
 
 		# SHIN UPDATE - Check if the user been deleted or is ontherwise not found
@@ -1112,10 +1172,13 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 			tchat = bot.get_chat(user2.id)
 		except telebot.apihelper.ApiTelegramException as e:
 			if "chat not found" in str(e):
-				logging.warning(f"User {user2.id} - {user2.username} could not be found and will be set to 'Left Group'.")
+				print(f"User {user2.id} - {user2.username} could not be found and will be set to 'Left Group'.")
 				with db.modifyUser(id=user2.id) as user:
 					user.setLeft(True)
-				continue
+				if shared_db is not None:
+					shared_db.user_left_chat(user2.id)
+					get_users_active_elsewhere(shared_db, config)
+				continue		
 
 		if user2 == user and not user.debugEnabled:
 			ch.saveMapping(user2.id, msid, ev.message_id)
