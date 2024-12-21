@@ -9,6 +9,9 @@ database: [sqlite, "secretlounge.sqlite"]
 # defaults to true
 #reg_open: true
 
+# Maximum number of users in the group
+max_users: 1000
+
 # Number of media uploads needed to register in the group
 reg_uploads: 5
 

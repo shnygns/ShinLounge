@@ -141,5 +141,5 @@ def get_users_active_elsewhere(shared_db, config):
 	if shared_db is None:
 		return
 	hub_dict = shared_db.get_active_users()
-	ae = {u['id'] for u in hub_dict if (u['current_active_lounge'] != config['bot_token'] and len(u['current_active_lounge']) > 2)}
+	ae = {u['user_id'] for u in hub_dict if (u['current_active_lounge'] != config['bot_token'] and len(u['current_active_lounge']) > 2)}
 	return ae
