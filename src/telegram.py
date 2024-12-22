@@ -988,14 +988,7 @@ def relay(ev):
 			tgsched.register(send_packed_media_as_album, name="media_packing", data=[{'file_id': media_file_id, 'media_type': media_type}], ev=ev, first_run = 1)
 		return
 	
-	try:
-		db_user = db.getUser(id=user.id)
-	except KeyError as e:
-		db_user = None
-	if user.id in active_elsewhere and not (db_user and db_user.rank >= RANKS.mod):
-		active_lounge = shared_db.get_user_current_lounge_name(user.id)
-		bot.send_message(user.id, f"<em>Just so you know, because you are furrently active in <strong>{active_lounge}</strong>, you will not see media in this lounge. You must leave that bot first and give time to let it refresh.</em>", parse_mode="HTML")
-	
+
 	# handle commands and karma giving
 	if ev.content_type == "text":
 		if ev.text.startswith("/"):
@@ -1011,6 +1004,15 @@ def relay(ev):
 	if ev.content_type == "poll":
 		if not ev.poll.is_anonymous:
 			return send_answer(ev, rp.Reply(rp.types.ERR_POLL_NOT_ANONYMOUS))
+		
+	try:
+		db_user = db.getUser(id=user.id)
+	except KeyError as e:
+		db_user = None
+	if user.id in active_elsewhere and not (db_user and db_user.rank >= RANKS.mod and db_user.registered):
+		active_lounge = shared_db.get_user_current_lounge_name(user.id)
+		bot.send_message(user.id, f"<em>Just so you know, because you are currently active in <strong>{active_lounge}</strong>, you will not see media in this lounge. You must leave that bot first and give time to let it refresh.</em>", parse_mode="HTML")
+	
 	
 	#SHIN UPDATE - Check if the message is part of an album
 	if media_packing and ev.content_type in ['video', 'photo']:
