@@ -898,6 +898,7 @@ def check_user_active_silently(user_id):
             return False
 
 def relay(ev):
+	global active_elsewhere
 	album_count = 1
 	media_packing = config.get("media_packing", True) 
 	user = ev.from_user
@@ -1009,6 +1010,7 @@ def relay(ev):
 		db_user = db.getUser(id=user.id)
 	except KeyError as e:
 		db_user = None
+	active_elsewhere = get_users_active_elsewhere(shared_db, config)
 	if user.id in active_elsewhere and not (db_user and db_user.rank >= RANKS.mod and db_user.registered):
 		active_lounge = shared_db.get_user_current_lounge_name(user.id)
 		bot.send_message(user.id, f"<em>Just so you know, because you are currently active in <strong>{active_lounge}</strong>, you will not see media in this lounge. You must leave that bot first and give time to let it refresh.</em>", parse_mode="HTML")
