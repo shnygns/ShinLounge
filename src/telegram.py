@@ -1,4 +1,5 @@
 import telebot
+import time
 import logging
 import time
 import json
@@ -53,6 +54,8 @@ linked_network: dict = None
 
 def init(_config, _db, _sdb, _ch, _bot, _bl, _ae):
 	global bot, db, shared_db, ch, config, message_queue, allow_documents, allow_polls, linked_network, tgsched, blacklisted, me, active_elsewhere
+	max_retries = 3
+	retry_delay = 5
 	if _config["bot_token"] == "":
 		logging.error("No telegram token specified.")
 		exit(1)
@@ -74,7 +77,17 @@ def init(_config, _db, _sdb, _ch, _bot, _bl, _ae):
 	# SHIN UPDATE: Bot is now initialized in secretlounge-ng and passed to telegram.init()
 	# bot = telebot.TeleBot(config["bot_token"], threaded=False)
 	bot = _bot
-	me = bot.get_me()
+	for attempt in range(max_retries):
+		try:
+			me = bot.get_me()
+			break  # Exit the loop if successful
+		except telebot.apihelper.ApiException as e:
+			logging.error("Failed to get bot info (attempt %d/%d): %s", attempt + 1, max_retries, e.result.text)
+			if attempt < max_retries - 1:
+				time.sleep(retry_delay)  # Wait before retrying
+			else:
+				logging.error("Giving up after %d attempts", max_retries)
+				exit(1)
 	db = _db
 	shared_db = _sdb
 	blacklisted = _bl
@@ -975,9 +988,13 @@ def relay(ev):
 			tgsched.register(send_packed_media_as_album, name="media_packing", data=[{'file_id': media_file_id, 'media_type': media_type}], ev=ev, first_run = 1)
 		return
 	
-	if user.id in active_elsewhere and user.rank < RANKS.mod:
+	try:
+		db_user = db.getUser(id=user.id)
+	except KeyError as e:
+		db_user = None
+	if user.id in active_elsewhere and not (db_user and db_user.rank >= RANKS.mod):
 		active_lounge = shared_db.get_user_current_lounge_name(user.id)
-		bot.send_message(user.id, f"<em>Just so you know, because you are furrently active in {active_lounge}, you will not see media in this lounge. You must leave that bot first and give time to let it refresh.</em>", parse_mode="HTML")
+		bot.send_message(user.id, f"<em>Just so you know, because you are furrently active in <strong>{active_lounge}</strong>, you will not see media in this lounge. You must leave that bot first and give time to let it refresh.</em>", parse_mode="HTML")
 	
 	# handle commands and karma giving
 	if ev.content_type == "text":
