@@ -272,7 +272,8 @@ def user_join(c_user):
 			err = rp.Reply(rp.types.ERR_BLACKLISTED, reason=user.blacklistReason, contact=blacklist_contact)
 
 		if user.id in active_elsewhere and user.rank < RANKS.mod:
-			err = rp.Reply(rp.types.ERR_ACTIVE_ELSEWHERE)
+			active_lounge = shared_db.get_user_current_lounge_name(user.id)
+			err = rp.Reply(rp.types.ERR_ACTIVE_ELSEWHERE, lounge=active_lounge)
 
 		#If they are not an allowed user, return error message
 		if err is not None:
@@ -329,7 +330,7 @@ def user_join(c_user):
 	# If the chat is full, return error message
 	if db.count_active_users() >= max_users:
 		return rp.Reply(rp.types.ERR_CHAT_FULL)
-
+	
 	# Then, create new user
 	user = User()
 	user.defaults()
@@ -351,6 +352,10 @@ def user_join(c_user):
 		bot.send_message(c_user.id, reply_message, parse_mode="HTML")
 		# ret.append(rp.Reply(rp.types.CHAT_JOIN_FIRST, bot_name=bot_name))
 	else:
+
+		if user.id in active_elsewhere and user.rank < RANKS.mod:
+			active_lounge = shared_db.get_user_current_lounge_name(user.id)
+			return rp.Reply(rp.types.ERR_ACTIVE_ELSEWHERE, lounge = active_lounge)
 
 		# If reg_uploads is deactivated, register user automatically
 		if not reg_uploads:

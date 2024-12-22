@@ -250,7 +250,7 @@ format_strs = {
 	types.ERR_ALREADY_WARNED: em("A warning has already been issued for this message."),
 	types.ERR_INVALID_DURATION: em("You entered an invalid cooldown duration."),
 	types.ERR_NOT_IN_COOLDOWN: em("This user is not in a cooldown right now."),
-	types.ERR_ACTIVE_ELSEWHERE: em("Users can only be in one lounge at a time. To join here, leave any other lounge first, and wait 10 min for the system to update."),
+	types.ERR_ACTIVE_ELSEWHERE: em("Users can only be in one lounge at a time. To join here, leave {lounge} first, and wait 10 min for the system to update."),
 	types.ERR_CHAT_FULL: em("Sorry, the chat is full right now. Please try again later."),
 	types.ERR_BLACKLISTED: lambda reason, contact, **_:
 		em( "You've been blacklisted" + (reason and " for {reason!x}" or "") )+

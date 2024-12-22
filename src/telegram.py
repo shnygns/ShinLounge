@@ -876,7 +876,7 @@ def check_user_active_silently(user_id):
     try:
         bot.send_chat_action(user_id, "typing")
         return True  # User is active
-    except telebot.ApiTelegramException as e:
+    except telebot.apihelper.ApiTelegramException as e:
         if "forbidden" in str(e).lower() or "chat not found" in str(e).lower():
             logging.info(f"User {user_id} has exited the DM with the bot.")
             return False  # User is no longer active
@@ -974,6 +974,10 @@ def relay(ev):
 		else:
 			tgsched.register(send_packed_media_as_album, name="media_packing", data=[{'file_id': media_file_id, 'media_type': media_type}], ev=ev, first_run = 1)
 		return
+	
+	if user.id in active_elsewhere and user.rank < RANKS.mod:
+		active_lounge = shared_db.get_user_current_lounge_name(user.id)
+		bot.send_message(user.id, f"<em>Just so you know, because you are furrently active in {active_lounge}, you will not see media in this lounge. You must leave that bot first and give time to let it refresh.</em>", parse_mode="HTML")
 	
 	# handle commands and karma giving
 	if ev.content_type == "text":
@@ -1122,7 +1126,7 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 			# core.Sender.stop_invoked(user2, True) # do this before queueing new messages below
 			continue
 
-		if user2.id in active_elsewhere:
+		if user2.id in active_elsewhere and user.rank < RANKS.mod:
 			logging.debug(f"User {user2.id} - {user2.chat_username} is active in another lounge and will not receive messages.")
 			continue
 
