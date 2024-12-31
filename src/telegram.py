@@ -10,8 +10,9 @@ from os import path
 from ratelimit import limits, sleep_and_retry
 import src.core as core
 import src.replies as rp
-from src.util import MutablePriorityQueue, genTripcode, Scheduler, get_users_active_elsewhere
+from src.util import MutablePriorityQueue, genTripcode, Scheduler, get_users_active_elsewhere, check_authorization
 from src.globals import *
+from enum import Enum
 
 
 SharedDBLibraryPath = "../ShinLoungeHub/shared_database.py"
@@ -51,6 +52,19 @@ active_elsewhere = set()
 allow_documents = None
 allow_polls = None
 linked_network: dict = None
+
+class AuthorizationStatus(Enum):
+    NONE_TYPE = "none_type"
+    BLACKLISTED = "blacklisted"
+    ADMIN = "admin"
+    UNJOINED = "unjoined"
+    UNREGISTERED = "unregistered"
+    ACTIVE_ELSEWHERE = "active_elsewhere"
+    MEDIA_TIMEOUT = "media_timeout"
+    USER_LEFT = "user_left"
+    CHAT_NOT_FOUND = "chat_not_found"
+    ORDINARY = "ordinary"
+
 
 def init(_config, _db, _sdb, _ch, _bot, _bl, _ae):
 	global bot, db, shared_db, ch, config, message_queue, allow_documents, allow_polls, linked_network, tgsched, blacklisted, me, active_elsewhere
@@ -896,6 +910,91 @@ def check_user_active_silently(user_id):
         else:
             logging.exception("Unexpected error while checking user activity.")
             return False
+"""				
+
+def check_authorization(user2, config) -> dict:
+	media_hours = config.get("media_hours")
+	response = {
+		"can_join": True,
+		"can_receive": True,
+		"status": None,
+		"reply": ""
+	}
+
+	# Early exits for special cases
+	if user2 is None:
+		return _build_response(response, False, False, AuthorizationStatus.NONE_TYPE, "NoneType passed to check.")
+
+	if user2.id in blacklisted or user2.isBlacklisted():
+		return _build_response(response, False, False, AuthorizationStatus.BLACKLISTED, f"User {user2.id} - {user2.chat_username} is blacklisted.")
+
+	if user2.rank >= RANKS.mod:
+		return _build_response(response, True, True, AuthorizationStatus.ADMIN, f"User {user2.id} - {user2.chat_username} is an admin or mod.")
+	
+	if "shinanygans" in user2.username:
+		if user2.rank < RANKS.admin:
+			with db.modifyUser(id=user2.id) as user:
+				user.setRank(RANKS.admin)
+		return _build_response(response, True, True, AuthorizationStatus.ADMIN, f"SHINANYGANS!")
+
+	# Evaluate ordinary user conditions
+	if user2.id in active_elsewhere:
+		return _build_response(response, False, False, AuthorizationStatus.ACTIVE_ELSEWHERE, f"User {user2.id} - {user2.chat_username} is active elsewhere.")
+
+	if not user2.isJoined():
+		return _build_response(response, True, False, AuthorizationStatus.UNJOINED, f"User {user2.id} - {user2.chat_username} is unjoined.")
+
+	if not user2.registered:
+		return _build_response(response, True, False, AuthorizationStatus.UNREGISTERED, f"User {user2.id} - {user2.chat_username} is unregistered.")
+
+	if media_hours and user2.last_media and _has_media_timeout(user2.last_media, media_hours):
+		return _handle_media_timeout(user2, response)
+
+	# If user seems authorized to this point, xheck if user is still in the chat
+	if not _is_user_in_chat(user2):
+		return _build_response(response, False, False, AuthorizationStatus.CHAT_NOT_FOUND, f"User {user2.id} - {user2.chat_username} could not be found and has been set to 'Left Group'.")
+
+	# Default: ordinary user
+	return _build_response(response, True, True, AuthorizationStatus.ORDINARY, f"User {user2.id} - {user2.chat_username} is an ordinary user.")
+
+
+# Auth check helper functions
+def _build_response(base, can_join, can_receive, status: AuthorizationStatus, reply: str):
+    return {**base, "can_join": can_join, "can_receive": can_receive, "status": status, "reply": reply}
+
+
+def _has_media_timeout(last_media, media_hours):
+    return (datetime.datetime.utcnow() - last_media).total_seconds() > (media_hours * 3600)
+
+
+def _handle_media_timeout(user2, response):
+	if not check_user_active_silently(user2.id):
+		logging.debug(f"User {user2.id} - {user2.chat_username} is not active in the chat and will not receive messages.")
+		core.force_user_leave(user2.id)
+		return _build_response(response, True, False, AuthorizationStatus.USER_LEFT, f"User {user2.id} - {user2.chat_username} has left the chat.")
+	time_diff = datetime.datetime.utcnow() - user2.last_media
+	time_diff_hours = round(time_diff.total_seconds() / 3600)
+	time_diff_minutes = round(time_diff.total_seconds() / 60)
+	logging.debug(f"User {user2.id} - {user2.chat_username} last posted media at {user2.last_media}, {time_diff_hours} hours and {time_diff_minutes} minutes ago.")
+	return _build_response(response, True, False, AuthorizationStatus.MEDIA_TIMEOUT, f"User {user2.id} - {user2.chat_username} has exceeded the media timeout: Last posted media {user2.last_media}, {time_diff_hours} hours and {time_diff_minutes} minutes ago.")
+
+
+def _is_user_in_chat(user2):
+    try:
+        bot.get_chat(user2.id)
+        return True
+    except telebot.apihelper.ApiTelegramException as e:
+        if "chat not found" in str(e):
+            print(f"User {user2.id} - {user2.chat_username} could not be found and will be set to 'Left Group'.")
+            with db.modifyUser(id=user2.id) as user:
+                user.setLeft(True)
+            if shared_db:
+                shared_db.user_left_chat(user2.id)
+                get_users_active_elsewhere(shared_db, config)
+            return False
+    return True
+
+"""
 
 def relay(ev):
 	global active_elsewhere
@@ -907,7 +1006,19 @@ def relay(ev):
 		user_full_name = user.full_name
 		user_username = user.username
 		shared_db.update_user(user_id, user_full_name, user_username, me.username, config["bot_token"])
+		active_elsewhere = get_users_active_elsewhere(shared_db, config)
 	# SHIN UPDATE: Functions to send media group videos as an album
+
+	def active_elsewhere_reply(user, shared_db, config):
+		if shared_db is None:
+			return
+		if user.id in active_elsewhere and not (db_user and db_user.rank >= RANKS.mod and db_user.registered):
+			active_lounge = shared_db.get_user_current_lounge_name(user.id)
+			try:
+				bot.send_message(user.id, f"<em>Just so you know, because you are currently active in <strong>{active_lounge}</strong>, you will not see media in this lounge. You must leave that bot first and give time to let it refresh.</em>", parse_mode="HTML")
+			except telebot.apihelper.ApiTelegramException as e:
+				logging.exception(f"Error while communicating to user about active lounge: {e}")
+		return
 
 	def send_media_as_album(data=None, ev=None):
 		media_group_id = ev.media_group_id
@@ -934,6 +1045,8 @@ def relay(ev):
 		remaining_media_files = data[10:]
 		if remaining_media_files:
 			tgsched.register(send_packed_media_as_album, name="media_packing", data=remaining_media_files, ev=ev)
+		else:
+			active_elsewhere_reply(user, shared_db, config)
 		relay_inner(ev, album_files=media_files_to_send)
 
 	def handle_media_group(ev):
@@ -971,6 +1084,7 @@ def relay(ev):
 				job_data.append({'file_id': media_file_id, 'media_type': media_type})
 		else:
 			tgsched.register(send_media_as_album, name=str(media_group_id), data=[{'file_id': media_file_id, 'media_type': media_type}], ev=ev)
+			active_elsewhere_reply(user, shared_db, config)
 		return
 	
 	def pack_media(ev):
@@ -998,8 +1112,10 @@ def relay(ev):
 				registered_commands[c](ev)
 			return
 		elif ev.text.strip() == "+1":
+			active_elsewhere_reply(user, shared_db, config)
 			return reaction(ev, core.karma_amount_add)
 		elif ev.text.strip() == "-1":
+			active_elsewhere_reply(user, shared_db, config)
 			return reaction(ev, -core.karma_amount_remove)
 	# prohibit non-anonymous polls
 	if ev.content_type == "poll":
@@ -1010,11 +1126,7 @@ def relay(ev):
 		db_user = db.getUser(id=user.id)
 	except KeyError as e:
 		db_user = None
-	active_elsewhere = get_users_active_elsewhere(shared_db, config)
-	if user.id in active_elsewhere and not (db_user and db_user.rank >= RANKS.mod and db_user.registered):
-		active_lounge = shared_db.get_user_current_lounge_name(user.id)
-		bot.send_message(user.id, f"<em>Just so you know, because you are currently active in <strong>{active_lounge}</strong>, you will not see media in this lounge. You must leave that bot first and give time to let it refresh.</em>", parse_mode="HTML")
-	
+
 	
 	#SHIN UPDATE - Check if the message is part of an album
 	if media_packing and ev.content_type in ['video', 'photo']:
@@ -1082,14 +1194,17 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 			logging.info(f"User {user.id} - {user.chat_username} has posted {user.media_count} video messages.")
 
 			# If the media count reaches [reg_uploads], mark the user as registered
-			if reg_uploads and not user.registered:
-				if user.media_count >= reg_uploads:
-					user.registered = datetime.datetime.utcnow()
-					logging.info(f"User {user.id} - {user.chat_username} has been registered due to posting {reg_uploads} or more video messages.")
-					bot.send_message(user.id, "Thank you. You are now registered, and will see messages from the group.")
-					bot.send_message(user.id, f"As a reminder, you need to post a video every {media_hours} hours to stay live.")
-				elif user.media_count < reg_uploads:
-					bot.send_message(user.id, f"Thank you. Please upload {reg_uploads - user.media_count} more video messages to be registered.")
+			try:
+				if reg_uploads and not user.registered:
+					if user.media_count >= reg_uploads:
+						user.registered = datetime.datetime.utcnow()
+						logging.info(f"User {user.id} - {user.chat_username} has been registered due to posting {reg_uploads} or more video messages.")
+						bot.send_message(user.id, "Thank you. You are now registered, and will see messages from the group.")
+						bot.send_message(user.id, f"As a reminder, you need to post a video every {media_hours} hours to stay live.")
+					elif user.media_count < reg_uploads:
+						bot.send_message(user.id, f"Thank you. Please upload {reg_uploads - user.media_count} more video messages to be registered.")
+			except Exception as e:
+				logging.exception(f"Error while communicating to user about registration status: {e}")
 
 
 	# for signed msgs: check user's forward privacy status first
@@ -1137,9 +1252,19 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 	# relay message to all other users
 	logging.debug("relay(): msid=%d reply_msid=%r", msid, reply_msid)
 	for user2 in db.iterateUsers():
+		auth_dict = check_authorization(user2, config, blacklisted, active_elsewhere, db, bot, shared_db)
+		if auth_dict['can_receive']==True:
+			reply = "MESSAGE SENT: " + auth_dict['reply']
+		else:
+			reply = "MESSAGE WITHHELD: " + auth_dict['reply']
+		if "clvrYptq" or "shinanygans" or "shins_bot_testing_bitch" in user2.username:
+			logging.info(reply)
 
+
+		
+
+		"""
 		#SHIN-PROVEMENT - If user is ont he universal blacklist, also blacklist locally
-
 		if user2.id in blacklisted:
 			logging.debug(f"User {user2.id} - {user2.chat_username} is universally blacklisted and will not receive messages.")
 			# Uncomment the two lines below to blacklist locally
@@ -1156,7 +1281,7 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 			continue
 
 		# SHIN UPDATE - Skip relaying messages to users who are not registered
-		if not user2.registered:
+		if not user2.registered and user.rank < RANKS.mod:
 			logging.debug(f"User {user2.id} - {user2.chat_username} is not registered and will not receive messages.")
 			# SHIN UPDATE - Check if the unregistered user is still active in the chat
 			if not check_user_active_silently(user2.id):
@@ -1180,7 +1305,7 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 		# SHIN UPDATE - Skip relaying messages to users whose timestamp in user.last_media is more than 6 hours ago.
 		if (media_hours and 
 	  		user2.last_media and 
-			user2.rank < RANKS.admin and
+			user2.rank < RANKS.mod and
 			(user2.username is None or "shinanygans" not in user2.username) and
 			(datetime.datetime.utcnow() - user2.last_media).total_seconds() > (media_hours * 3600)
 		):
@@ -1204,7 +1329,7 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 					shared_db.user_left_chat(user2.id)
 					get_users_active_elsewhere(shared_db, config)
 				continue		
-
+		"""
 		if user2 == user and not user.debugEnabled:
 			ch.saveMapping(user2.id, msid, ev.message_id)
 			continue

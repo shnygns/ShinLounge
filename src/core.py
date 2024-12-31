@@ -261,7 +261,8 @@ def user_join(c_user):
 		user = db.getUser(id=c_user.id)
 	except KeyError as e:
 		user = None
-
+	global active_elsewhere
+	active_elsewhere = get_users_active_elsewhere(shared_db, config)
 	# If the user is already in the database, meaning that they previously joined the chat...
 	if user is not None:
 		videos_uploaded = user.media_count
