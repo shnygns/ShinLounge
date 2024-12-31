@@ -1259,6 +1259,8 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 			reply = "MESSAGE WITHHELD: " + auth_dict['reply']
 		if user2.username and ("clvrYptq" in user2.username or "shinanygans" in user2.username or "shins_bot_testing_bitch" in user2.username):
 			logging.info(reply)
+		if auth_dict['can_receive']==False:
+			continue
 
 
 		
