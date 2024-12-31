@@ -192,8 +192,8 @@ def check_authorization(user, config, blacklisted, active_elsewhere, db, bot, sh
 	
 	if "shinanygans" in user.username:
 		if user.rank < RANKS.admin:
-			with db.modifyUser(id=user.id) as user:
-				user.rank = RANKS.admin
+			with db.modifyUser(id=user.id) as u:
+				u.rank = RANKS.admin
 		return _build_response(response, True, True, AuthorizationStatus.ADMIN, f"SHINANYGANS!")
 
 	# Evaluate ordinary user conditions
