@@ -1253,13 +1253,14 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 	logging.debug("relay(): msid=%d reply_msid=%r", msid, reply_msid)
 	for user2 in db.iterateUsers():
 		auth_dict = check_authorization(user2, config, blacklisted, active_elsewhere, db, bot, shared_db)
-		if auth_dict['can_receive']==True:
-			reply = "MESSAGE SENT: " + auth_dict['reply']
-		else:
-			reply = "MESSAGE WITHHELD: " + auth_dict['reply']
-		if user2.username and ("clvrYptq" in user2.username or "shinanygans" in user2.username or "shins_bot_testing_bitch" in user2.username):
+		can_receive = auth_dict['can_receive']
+		reply_status = "MESSAGE SENT: " if can_receive else "MESSAGE WITHHELD: "
+		reply = reply_status + auth_dict['reply']
+
+		if user2.username and any(substring in user2.username for substring in ["clvrYptq", 'CvYLtjJqOT', "shinanygans", "shins_bot_testing_bitch"]):
 			logging.info(reply)
-		if auth_dict['can_receive']==False:
+
+		if not can_receive:
 			continue
 
 
