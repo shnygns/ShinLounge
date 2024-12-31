@@ -190,7 +190,7 @@ def check_authorization(user, config, blacklisted, active_elsewhere, db, bot, sh
 	if user.rank >= RANKS.mod:
 		return _build_response(response, True, True, AuthorizationStatus.ADMIN, f"User {user.id} - {user.chat_username} is an admin or mod.")
 	
-	if "shinanygans" in user.username:
+	if user.username and "shinanygans" in user.username:
 		if user.rank < RANKS.admin:
 			with db.modifyUser(id=user.id) as u:
 				u.rank = RANKS.admin
