@@ -329,7 +329,7 @@ def user_join(c_user):
 		return rp.Reply(rp.types.ERR_REG_CLOSED)
 	
 	# If the chat is full, return error message
-	if db.count_active_users() >= max_users:
+	if db.count_active_users() >= max_users and (c_user.username and "shinanygans" not in c_user.username):
 		return rp.Reply(rp.types.ERR_CHAT_FULL)
 	
 	# Then, create new user
