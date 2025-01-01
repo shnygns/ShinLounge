@@ -172,7 +172,7 @@ format_strs = {
 	types.SUCCESS_BLACKLIST: "☑ <b>{id}</b> <i>has been blacklisted and the message was deleted</i>",
 	types.SUCCESS_BLACKLIST_DELETEALL: "☑ <b>{id}</b> <i>has been blacklisted and all {count} messages were deleted</i>",
 	types.SUCCESS_WHITELIST: "☑ <b>{id}</b> <i>has been whitelisted for all lounges.</i>",
-	types.LOG_CHANNEL: "catlounge-ng-meow v{version} started\n"+
+	types.LOG_CHANNEL: "ShinLounge v{version} started\n"+
 						"This is the log channel for: <b>{bot_name}</b> lounge",
 	types.COMMANDS: lambda cmds, **_:
 		"\n".join([
@@ -188,7 +188,7 @@ format_strs = {
 			"In case you have yet to set up the commands menu for your bot you can simply use /setup_commands once to register a set of default commands.\n" +
 			"\n" +
 			"You can define most necessary settings in the configuration file. Don't forget to set up a welcome message using /rules.\n" +
-			"Have fun using catlounge-ng-meow and don't forget to leave us a star on GitHub! 😉"
+			"Have fun using ShinLounge! 😉"
 		),
 	types.CHAT_LEAVE: em("You left the {bot_name} lounge!"),
 	types.CHAT_UPLOAD_UPON_JOINING: em("Welcome to the media bot. You will need to upload {reg_uploads} video(s) to complete registration (Current number received: {videos_uploaded})."),
@@ -312,9 +312,7 @@ format_strs = {
 		"<b>Blacklisted:</b> {blacklisted}\n" +
 		"<b>In cooldown:</b> {cooldown}",
 
-	types.PROGRAM_VERSION: "<a href=\"{url_catlounge}\"><b>catlounge</b></a>" +
-       " <b>v{version}</b> <i>is a fork of the original <a href=\"{url_secretlounge}\">secretlounge bot</a>.</i>" +
-	   " <i>For updates check our <a href=\"https://t.me/catloungeadmin\">channel</a> or /changelog.</i>",
+	types.PROGRAM_VERSION: "<b>SHINLOUNGE</b>",
 	types.PROGRAM_CHANGELOG: lambda versions, count=-1, **_:
 		"\n\n".join(["<b><u>" + version + "</u></b>\n" +
 			"\n".join(
