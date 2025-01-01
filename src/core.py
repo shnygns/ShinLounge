@@ -430,7 +430,7 @@ def force_user_leave(user_id, blocked=True):
 			shared_db.user_left_chat(user.id)
 			active_elsewhere = get_users_active_elsewhere(shared_db, config)
 	if blocked:
-		logging.warning("Force leaving %s because bot is blocked", user)
+		logging.info("Force leaving %s because bot is blocked", user)
 	Sender.stop_invoked(user)
 
 @requireUser
