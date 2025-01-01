@@ -285,7 +285,7 @@ def user_join(c_user):
 		# This is an allowed user. If they are not currently joined and are trying to rejoin...
 		if not user.isJoined():
 			# ...see if there is room at the inn...
-			if db.count_active_users() >= max_users and (c_user.username and ("shinanygans" not in c_user.username or "clvrYptq" not in c_user.username)):
+			if db.count_active_users() >= max_users and not (c_user.username and ("shinanygans" not in c_user.username or "clvrYptq" not in c_user.username)):
 				err = rp.Reply(rp.types.ERR_CHAT_FULL)
 				updateUserFromEvent(user, c_user)
 				return err
