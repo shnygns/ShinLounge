@@ -198,13 +198,16 @@ def check_authorization(user, config, blacklisted, active_elsewhere, db, bot, sh
 				u.rank = RANKS.admin
 		return _build_response(response, True, user.isJoined(), AuthorizationStatus.ADMIN, f"SHINANYGANS!")
 
-	# Evaluate ordinary user conditions
+	# Determine whether user is allowed to join group
 	if user.id in active_elsewhere:
-		# If shared_db is not none, check share_db for currently active lounge
 		if shared_db:
 			active_lounge = shared_db.get_user_current_lounge_name(user.id)
 			return _build_response(response, False, False, AuthorizationStatus.ACTIVE_ELSEWHERE, f"User {user.id} - {user.chat_username} is active elsewhere: {active_lounge}.")
 		return _build_response(response, False, False, AuthorizationStatus.ACTIVE_ELSEWHERE, f"User {user.id} - {user.chat_username} is active elsewhere.")
+
+	# Determine whether user can receive media
+	if not user.isJoined():
+		return _build_response(response, True, False, AuthorizationStatus.UNJOINED, f"User {user.id} - {user.chat_username} is not currently in the group.")
 
 	if not user.registered:
 		return _build_response(response, True, False, AuthorizationStatus.UNREGISTERED, f"User {user.id} - {user.chat_username} is unregistered.")
@@ -217,7 +220,7 @@ def check_authorization(user, config, blacklisted, active_elsewhere, db, bot, sh
 		return _build_response(response, True, False, AuthorizationStatus.CHAT_NOT_FOUND, f"User {user.id} - {user.chat_username} could not be found and has been set to 'Left Group'.")
 
 	# Default: ordinary user, received based on whether joined.
-	return _build_response(response, True, user.isJoined(), AuthorizationStatus.ORDINARY, f"User {user.id} - {user.chat_username} is an ordinary user (RANK: {user.rank}).")
+	return _build_response(response, True, True, AuthorizationStatus.ORDINARY, f"User {user.id} - {user.chat_username} is an ordinary user (RANK: {user.rank}).")
 
 
 # Auth check helper functions
@@ -260,7 +263,7 @@ def _check_user_active_silently(user_id, bot):
         return True  # User is active
     except telebot.apihelper.ApiTelegramException as e:
         if "forbidden" in str(e).lower() or "chat not found" in str(e).lower():
-            logging.info(f"User {user_id} has exited the DM with the bot.")
+            logging.debug(f"User {user_id} has exited the DM with the bot.")
             return False  # User is no longer active
         else:
             logging.exception("Unexpected error while checking user activity.")

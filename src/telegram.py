@@ -905,7 +905,7 @@ def check_user_active_silently(user_id):
         return True  # User is active
     except telebot.apihelper.ApiTelegramException as e:
         if "forbidden" in str(e).lower() or "chat not found" in str(e).lower():
-            logging.info(f"User {user_id} has exited the DM with the bot.")
+            logging.debug(f"User {user_id} has exited the DM with the bot.")
             return False  # User is no longer active
         else:
             logging.exception("Unexpected error while checking user activity.")
