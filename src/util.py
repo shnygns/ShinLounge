@@ -180,6 +180,10 @@ def check_authorization(user, config, blacklisted, active_elsewhere, db, bot, sh
 		"log_message": ""
 	}
 
+	# Ensures all admins are whitelisted
+	if shared_db and user.rank >= RANKS.admin:
+		shared_db.whitelist_user(user.id)
+
 	# Early exits for special cases
 	if user is None:
 		return _build_response(response, False, False, AuthorizationStatus.NONE_TYPE, "NoneType passed to check.")
