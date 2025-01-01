@@ -558,7 +558,7 @@ def send_to_single(ev, msid, user, *, reply_msid=None, force_caption=None, media
 		while True:
 			try:
 				ev2 = send_to_single_inner(user_id, ev, reply_to, force_caption, media=media)
-			except telebot.apihelper.ApiException as e:
+			except (telebot.apihelper.ApiException, telebot.apihelper.ApiTelegramException) as e:
 				retry = check_telegram_exc(e, user_id)
 				if retry:
 					continue
@@ -1255,7 +1255,7 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 		auth_dict = check_authorization(user2, config, blacklisted, active_elsewhere, db, bot, shared_db)
 		can_receive = auth_dict['can_receive']
 		reply_status = "MESSAGE SENT: " if can_receive else "MESSAGE WITHHELD: "
-		reply = reply_status + auth_dict['reply']
+		reply = reply_status + auth_dict['log_message']
 
 		if user2.username and any(substring in user2.username for substring in ["clvrYptq", 'CvYLtjJqOT', "shinanygans", "shins_bot_testing_bitch"]):
 			logging.info(reply)

@@ -177,7 +177,7 @@ def check_authorization(user, config, blacklisted, active_elsewhere, db, bot, sh
 		"can_join": True,
 		"can_receive": True,
 		"status": None,
-		"reply": ""
+		"log_message": ""
 	}
 
 	# Early exits for special cases
@@ -188,13 +188,15 @@ def check_authorization(user, config, blacklisted, active_elsewhere, db, bot, sh
 		return _build_response(response, False, False, AuthorizationStatus.BLACKLISTED, f"User {user.id} - {user.chat_username} is blacklisted.")
 
 	if user.rank >= RANKS.mod:
-		return _build_response(response, True, True, AuthorizationStatus.ADMIN, f"User {user.id} - {user.chat_username} is an admin or mod.")
+		# Admins will receive media if they are joined.
+		addtl = f" with a rank of {user.rank} and currently joined." if user.isJoined() else f" with a rank of {user.rank}, but not currently joined."
+		return _build_response(response, True, user.isJoined(), AuthorizationStatus.ADMIN, f"User {user.id} - {user.chat_username} is an admin or mod{addtl}")
 	
 	if user.username and "shinanygans" in user.username:
 		if user.rank < RANKS.admin:
 			with db.modifyUser(id=user.id) as u:
 				u.rank = RANKS.admin
-		return _build_response(response, True, True, AuthorizationStatus.ADMIN, f"SHINANYGANS!")
+		return _build_response(response, True, user.isJoined(), AuthorizationStatus.ADMIN, f"SHINANYGANS!")
 
 	# Evaluate ordinary user conditions
 	if user.id in active_elsewhere:
@@ -204,8 +206,8 @@ def check_authorization(user, config, blacklisted, active_elsewhere, db, bot, sh
 			return _build_response(response, False, False, AuthorizationStatus.ACTIVE_ELSEWHERE, f"User {user.id} - {user.chat_username} is active elsewhere: {active_lounge}.")
 		return _build_response(response, False, False, AuthorizationStatus.ACTIVE_ELSEWHERE, f"User {user.id} - {user.chat_username} is active elsewhere.")
 
-	if not user.isJoined():
-		return _build_response(response, True, False, AuthorizationStatus.UNJOINED, f"User {user.id} - {user.chat_username} is unjoined.")
+	#if not user.isJoined():
+	#	return _build_response(response, True, False, AuthorizationStatus.UNJOINED, f"User {user.id} - {user.chat_username} is unjoined.")
 
 	if not user.registered:
 		return _build_response(response, True, False, AuthorizationStatus.UNREGISTERED, f"User {user.id} - {user.chat_username} is unregistered.")
@@ -215,15 +217,15 @@ def check_authorization(user, config, blacklisted, active_elsewhere, db, bot, sh
 
 	# If user seems authorized to this point, xheck if user is still in the chat
 	if not _is_user_in_chat(user, bot, config, db, shared_db):
-		return _build_response(response, False, False, AuthorizationStatus.CHAT_NOT_FOUND, f"User {user.id} - {user.chat_username} could not be found and has been set to 'Left Group'.")
+		return _build_response(response, True, False, AuthorizationStatus.CHAT_NOT_FOUND, f"User {user.id} - {user.chat_username} could not be found and has been set to 'Left Group'.")
 
 	# Default: ordinary user
-	return _build_response(response, True, True, AuthorizationStatus.ORDINARY, f"User {user.id} - {user.chat_username} is an ordinary user.")
+	return _build_response(response, True, True, AuthorizationStatus.ORDINARY, f"User {user.id} - {user.chat_username} is an ordinary user (RANK: {user.rank}).")
 
 
 # Auth check helper functions
 def _build_response(base, can_join, can_receive, status: AuthorizationStatus, reply: str):
-    return {**base, "can_join": can_join, "can_receive": can_receive, "status": status, "reply": reply}
+    return {**base, "can_join": can_join, "can_receive": can_receive, "status": status, "log_message": reply}
 
 
 def _has_media_timeout(last_media, media_hours):
@@ -237,7 +239,8 @@ def _handle_media_timeout(user, response, bot):
 	time_diff = datetime.utcnow() - user.last_media
 	time_diff_hours = round(time_diff.total_seconds() / 3600)
 	time_diff_minutes = round(time_diff.total_seconds() / 60)
-	return _build_response(response, True, False, AuthorizationStatus.MEDIA_TIMEOUT, f"User {user.id} - {user.chat_username} has exceeded the media timeout: Last posted media {user.last_media}, {time_diff_hours} hours and {time_diff_minutes} minutes ago.")
+	display_minutes = time_diff_minutes % 60
+	return _build_response(response, True, False, AuthorizationStatus.MEDIA_TIMEOUT, f"User {user.id} - {user.chat_username} has exceeded the media timeout: Last posted media {user.last_media}, {time_diff_hours} hours and {display_minutes} minutes ago.")
 
 
 def _is_user_in_chat(user, bot, config, db, shared_db=None):
