@@ -913,6 +913,7 @@ def check_user_active_silently(user_id):
 
 def relay(ev):
 	global active_elsewhere
+	global blacklisted
 	album_count = 1
 	media_packing = config.get("media_packing", True) 
 	user = ev.from_user
@@ -922,6 +923,7 @@ def relay(ev):
 		user_username = user.username
 		shared_db.update_user(user_id, user_full_name, user_username, me.username, config["bot_token"])
 		active_elsewhere = get_users_active_elsewhere(shared_db, config)
+		blacklisted = shared_db.get_list_of_banned_users()
 	# SHIN UPDATE: Functions to send media group videos as an album
 
 	def active_elsewhere_reply(user, shared_db, config):

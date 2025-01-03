@@ -839,7 +839,7 @@ def blacklist_user(user, msid, reason, del_all=False, univ=False):
 	Sender.stop_invoked(user2, True) # do this before queueing new messages below
 	_push_system_message(
 		rp.Reply(rp.types.ERR_BLACKLISTED, reason=reason, contact=blacklist_contact),
-		who=user2, reply_to=msid)
+		who=user2.chat_username, reply_to=msid)
 	
 	#SHIN-PROVEMENT: Record ban to universal database
 	if shared_db is not None:
@@ -871,7 +871,7 @@ def whitelist_user(user, msid):
 			return
 		shared_db.whitelist_user(user2.id)
 	logging.info("%s was whitelisted by %s", user2, user)
-	return rp.Reply(rp.types.SUCCESS_WHITELIST, id=user.getObfuscatedId())
+	return rp.Reply(rp.types.SUCCESS_WHITELIST, id=user2.chat_username)
 
 
 @requireUser

@@ -220,13 +220,11 @@ def check_authorization(user, config, blacklisted, active_elsewhere, db, bot, sh
 
 	# If a user not active elsewhere is rejoining a group, 'can_receive' depends on registration status
 	if not user.isJoined():
-		receive = True
 		msg = rp.Reply(rp.types.CHAT_REJOIN, media_hours = media_hours) if media_hours else rp.Reply(rp.types.CHAT_REJOIN_NO_HOURS) 
 		if not user.registered:
-			receive = False
 			msg = rp.Reply(rp.types.CHAT_REJOIN_UNREG, reg_uploads = reg_uploads, videos_uploaded = videos_uploaded) 
-		log = f"User {user.id} - {user.chat_username} is rejoining the group."
-		return _build_response(response, True, receive, AuthorizationStatus.UNJOINED, log, msg)
+		log = f"User {user.id} - {user.chat_username} is currently not joined in the group."
+		return _build_response(response, True, False, AuthorizationStatus.UNJOINED, log, msg)
 
 	# If a user is already active but unregistered, send a registration reminder
 	if not user.registered:
