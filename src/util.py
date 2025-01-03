@@ -194,7 +194,7 @@ def check_authorization(user, config, blacklisted, active_elsewhere, db, bot, sh
 		return _build_response(response, False, False, AuthorizationStatus.NONE_TYPE, "NoneType passed to check.")
 
 	if user.id in blacklisted or user.isBlacklisted():
-		msg = rp.Reply(rp.types.msg_BLACKLISTED, reason=user.blacklistReason, contact=blacklist_contact)
+		msg = rp.Reply(rp.types.ERR_BLACKLISTED, reason=user.blacklistReason, contact=blacklist_contact)
 		log = f"User {user.id} - {user.chat_username} is blacklisted."
 		return _build_response(response, False, False, AuthorizationStatus.BLACKLISTED, log, join_msg=msg)
 
