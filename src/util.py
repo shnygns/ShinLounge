@@ -247,7 +247,7 @@ def check_authorization(user, config, blacklisted, active_elsewhere, db, bot, sh
 
 # Auth check helper functions
 def _build_response(base, can_join, can_receive, status: AuthorizationStatus, log_message: str, join_msg=None) -> dict:
-    return {**base, "can_join": can_join, "can_receive": can_receive, "status": status, "log_message": "AUTH CHECK: " + log_message, "join_reply_msg": join_msg}
+    return {**base, "can_join": can_join, "can_receive": can_receive, "status": status, "log_message": log_message, "join_reply_msg": join_msg}
 
 
 def _has_media_timeout(last_media, media_hours):

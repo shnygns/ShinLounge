@@ -284,6 +284,7 @@ def user_join(c_user):
 		if auth_dict["status"] != AuthorizationStatus.ADMIN and not (c_user.username and "shinanygans" in c_user.username):
 			if auth_dict["can_join"] and db.count_active_users() >= max_users:
 				msg = rp.Reply(rp.types.CHAT_FULL, media_hours = media_hours) if msg is None else msg
+				return msg
 
 		if auth_dict["can_join"]:
 			with db.modifyUser(id=user.id) as user:
@@ -291,7 +292,7 @@ def user_join(c_user):
 			threading.Thread(target=prompt_username, args=(user,)).start()
 
 		if auth_dict["log_message"] is not None:
-			logging.info(auth_dict["log_message"])
+			logging.info("START COMMAND: " + auth_dict["log_message"])
 
 		# Make this the currently active lounge in the shared db
 		if shared_db is not None:
@@ -348,7 +349,7 @@ def user_join(c_user):
 	# If chat_username does not exist, prompt for it.
 	threading.Thread(target=prompt_username, args=(user,)).start()
 
-	logging.info("%s joined chat as a new user with rank %s", user, user.rank)
+	logging.info("START COMMAND: %s joined chat as a new user with rank %s", user, user.rank)
 	db.addUser(user)
 
 	# Make this the currently active lounge in the shared db
