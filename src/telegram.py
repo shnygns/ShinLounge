@@ -1072,13 +1072,19 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 	videos_in_album = []
 	reg_uploads = config.get("reg_uploads", 5) # default to 5 if not set
 	media_hours = config.get("media_hours") 
+	blacklist_contact = config.get("blacklist_contact")
 	is_media = is_forward(ev) or ev.content_type in MEDIA_FILTER_TYPES
+	user = db.getUser(id=ev.from_user.id)
+
+	if user.id in blacklisted:
+		return send_answer(ev, rp.Reply(rp.types.ERR_BLACKLISTED, reason="You have been iniversally blacklisted from the lounge groups.", contact = blacklist_contact))
+
+
 	msid = core.prepare_user_message(UserContainer(ev.from_user), calc_spam_score(ev),
 		is_media=is_media, signed=signed, tripcode=tripcode, ksigned=ksigned)
 	if msid is None or isinstance(msid, rp.Reply):
 		return send_answer(ev, msid) # don't relay message, instead reply
 
-	user = db.getUser(id=ev.from_user.id)
 	if album_files:
 		if isinstance(album_files, list):
 			for album_file in album_files:
@@ -1174,8 +1180,8 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 		reply_status = " (SENT)" if can_receive else " (WITHHELD)"
 		reply = auth_dict['log_message'] + reply_status
 
-		if user2.username and any(substring in user2.username for substring in ["shinanygans", "shins_bot_testing_bitch"]):
-			logging.info(reply)
+		#if user2.username and any(substring in user2.username for substring in ["shinanygans", "shins_bot_testing_bitch"]):
+		#	logging.info(reply)
 
 		if not can_receive:
 			continue

@@ -300,79 +300,19 @@ def user_join(c_user):
 			active_elsewhere = get_users_active_elsewhere(shared_db, config)
 		return msg
 
-
-
-	"""
-		if (user.isBlacklisted() or user.id in blacklisted):
-			err = rp.Reply(rp.types.ERR_BLACKLISTED, reason=user.blacklistReason, contact=blacklist_contact)
-
-		if user.id in active_elsewhere and user.rank < RANKS.mod:
-			active_lounge = shared_db.get_user_current_lounge_name(user.id)
-			err = rp.Reply(rp.types.ERR_ACTIVE_ELSEWHERE, lounge=active_lounge)
-
-		# If the user errors out, keep db entry up to date with current usernames and last activity and exit
-		if err is not None:
-			with db.modifyUser(id=user.id) as user:
-				updateUserFromEvent(user, c_user)
-			return err
-		
-		# This is an allowed user. If they are not currently joined and are trying to rejoin...
-		if not user.isJoined():
-			# ...see if there is room at the inn...
-			if db.count_active_users() >= max_users and not (c_user.username and ("shinanygans" not in c_user.username or "clvrYptq" not in c_user.username)):
-				err = rp.Reply(rp.types.ERR_CHAT_FULL)
-				with db.modifyUser(id=user.id) as user:
-					updateUserFromEvent(user, c_user)
-				return err
-
-			# ...if the lounge is not full, let them back in.
-			with db.modifyUser(id=user.id) as user:
-				updateUserFromEvent(user, c_user)
-				user.setLeft(False)
-			logging.info("%s rejoined chat", user)
-			bot.send_message(c_user.id, f"<em>Welcome back! As a reminder, you need to post a vid every {media_hours} hours to stay live.</em>", parse_mode="HTML")
-			return
-
-		# If the user is already joined, send them registration status and make sure they have a username
-		if user.rank == RANKS.admin:
-			bot.send_message(user.id, f"<em>Welcome. You are the admin and life is good. Obviously, you are the balls! The chat is ready for you to invite users.</em>", parse_mode="HTML")
-
-		# Check if user has uploaded enough videos to register
-		elif not user.registered:
-			if not reg_uploads or (reg_uploads > 0 and user.media_count > reg_uploads):
-				user.registered = datetime.datetime.utcnow()
-				logging.info(f"User {user.id} - {user.chat_username} has been registered due to posting {reg_uploads} or more video messages.")
-				bot.send_message(user.id, "<em>Welcome! You are now registered, and will see messages from the group.</em>", parse_mode="HTML")
-				if media_hours:
-					bot.send_message(c_user.id, f"<em>Just a reminder, you need to post a video every {media_hours} hours to stay live.</em>", parse_mode="HTML")
-
-			# Check if the user is required to upload videos, and the number of videos yet uploaded in not enough
-			elif user.rank != RANKS.admin and reg_uploads and reg_uploads > 0 and user.media_count < reg_uploads:
-				bot.send_message(c_user.id, f"<em>Welcome! Please upload {reg_uploads} video(s) to complete registration (Current number received: {videos_uploaded}).</em>", parse_mode="HTML")
-		else:
-			bot.send_message(c_user.id, "<em>Welcome! You are registered, and will see messages from the group.</em>", parse_mode="HTML")
-			if media_hours:
-				bot.send_message(c_user.id, f"<em>Just a reminder, you need to post a video every {media_hours} hours to stay live.</em>", parse_mode="HTML")
-
-		# SHIN UPDATE - make sure user has username
-		if not user.chat_username:
-			bot.send_message(c_user.id, "<em>But first, you don't have a username set. Please enter a username to use in the chat.</em>", parse_mode="HTML")
-			bot.register_next_step_handler_by_chat_id(c_user.id, get_username, user)
-		return 
-	"""
 	# If, however, the user is brand new and has not previuosly joined the chat, first check if user is allowed to join...
 	if not c_user.username or (c_user.username and "shinanygans" not in c_user.username):
 		if not reg_open:
-			logging.info("User %s tried to join but registration is closed", c_user)
+			logging.info("%s tried to join but registration is closed", c_user.realname)
 			return rp.Reply(rp.types.ERR_REG_CLOSED)
 		
 		if c_user.id in blacklisted:
-			logging.info("User %s tried to join but is blacklisted", c_user)
-			return rp.Reply(rp.types.ERR_BLACKLISTED, "You have been universally blacklisted from lounge groups.", blacklist_contact)
+			logging.info("%s tried to join but is blacklisted", c_user.realname)
+			return rp.Reply(rp.types.ERR_BLACKLISTED, reason="You have been universally blacklisted from lounge groups.", contact=blacklist_contact)
 		
 		# If the chat is full, return error message
 		if db.count_active_users() >= max_users:
-			logging.info("User %s tried to join but chat is full", c_user)
+			logging.info("%s tried to join but chat is full", c_user.realname)
 			return rp.Reply(rp.types.ERR_CHAT_FULL)
 	
 	# Then, create new user
