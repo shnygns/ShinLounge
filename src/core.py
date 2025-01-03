@@ -284,8 +284,7 @@ def user_join(c_user):
 		if auth_dict["status"] != AuthorizationStatus.ADMIN and not (c_user.username and "shinanygans" in c_user.username):
 			if auth_dict["can_join"] and db.count_active_users() >= max_users:
 				msg = rp.Reply(rp.types.CHAT_FULL, media_hours = media_hours) if msg is None else msg
-				if auth_dict["log_message"] is not None:
-					logging.info("START COMMAND: " + auth_dict["log_message"])
+				logging.info("%s tried to rejoin but chat is full", c_user.realname)
 				return msg
 
 		if auth_dict["can_join"]:
