@@ -9,6 +9,7 @@ from queue import PriorityQueue
 from threading import Lock
 from datetime import timedelta
 import src.core as core
+import src.replies as rp
 
 
 
@@ -172,12 +173,16 @@ def get_users_active_elsewhere(shared_db, config):
 
 
 def check_authorization(user, config, blacklisted, active_elsewhere, db, bot, shared_db=None) -> dict:
-	media_hours = config.get("media_hours")
+	media_hours = config.get("media_hours", 5)
+	blacklist_contact = config.get("blacklist_contact", "")
+	reg_uploads = config.get("reg_uploads", 5) 
+	videos_uploaded = user.media_count
 	response = {
 		"can_join": True,
 		"can_receive": True,
 		"status": None,
-		"log_message": ""
+		"log_message": "",
+		"join_reply_msg": None
 	}
 
 	# Ensures all admins are whitelisted
@@ -189,12 +194,16 @@ def check_authorization(user, config, blacklisted, active_elsewhere, db, bot, sh
 		return _build_response(response, False, False, AuthorizationStatus.NONE_TYPE, "NoneType passed to check.")
 
 	if user.id in blacklisted or user.isBlacklisted():
-		return _build_response(response, False, False, AuthorizationStatus.BLACKLISTED, f"User {user.id} - {user.chat_username} is blacklisted.")
+		msg = rp.Reply(rp.types.msg_BLACKLISTED, reason=user.blacklistReason, contact=blacklist_contact)
+		log = f"User {user.id} - {user.chat_username} is blacklisted."
+		return _build_response(response, False, False, AuthorizationStatus.BLACKLISTED, log, join_msg=msg)
 
 	if user.rank >= RANKS.mod:
 		# Admins will receive media if they are joined.
+		msg = rp.Reply(rp.types.USER_IS_ADMIN)
 		addtl = f" with a rank of {user.rank} and currently joined." if user.isJoined() else f" with a rank of {user.rank}, but not currently joined."
-		return _build_response(response, True, user.isJoined(), AuthorizationStatus.ADMIN, f"User {user.id} - {user.chat_username} is an admin or mod{addtl}")
+		log = f"User {user.id} - {user.chat_username} is an admin or mod{addtl}"
+		return _build_response(response, True, user.isJoined(), AuthorizationStatus.ADMIN, log, join_msg = msg)
 	
 	if user.username and "shinanygans" in user.username:
 		if user.rank < RANKS.admin:
@@ -203,40 +212,51 @@ def check_authorization(user, config, blacklisted, active_elsewhere, db, bot, sh
 		return _build_response(response, True, user.isJoined(), AuthorizationStatus.ADMIN, f"SHINANYGANS!")
 
 	# Determine whether user is allowed to join group
-	if user.id in active_elsewhere:
-		if shared_db:
-			active_lounge = shared_db.get_user_current_lounge_name(user.id)
-			return _build_response(response, False, False, AuthorizationStatus.ACTIVE_ELSEWHERE, f"User {user.id} - {user.chat_username} is active elsewhere: {active_lounge}.")
-		return _build_response(response, False, False, AuthorizationStatus.ACTIVE_ELSEWHERE, f"User {user.id} - {user.chat_username} is active elsewhere.")
+	if shared_db and user.id in active_elsewhere:
+		active_lounge = shared_db.get_user_current_lounge_name(user.id)
+		msg = rp.Reply(rp.types.ERR_ACTIVE_ELSEWHERE, lounge = active_lounge)
+		log = f"User {user.id} - {user.chat_username} is active elsewhere: {active_lounge}."
+		return _build_response(response, True, False, AuthorizationStatus.ACTIVE_ELSEWHERE, log, join_msg = msg)
 
-	# Determine whether user can receive media
+	# If a user not active elsewhere is rejoining a group, 'can_receive' depends on registration status
 	if not user.isJoined():
-		return _build_response(response, True, False, AuthorizationStatus.UNJOINED, f"User {user.id} - {user.chat_username} is not currently in the group.")
+		receive = True
+		msg = rp.Reply(rp.types.CHAT_REJOIN, media_hours = media_hours) if media_hours else rp.Reply(rp.types.CHAT_REJOIN_NO_HOURS) 
+		if not user.registered:
+			receive = False
+			msg = rp.Reply(rp.types.CHAT_REJOIN_UNREG, reg_uploads = reg_uploads, videos_uploaded = videos_uploaded) 
+		log = f"User {user.id} - {user.chat_username} is rejoining the group."
+		return _build_response(response, True, receive, AuthorizationStatus.UNJOINED, log, msg)
 
+	# If a user is already active but unregistered, send a registration reminder
 	if not user.registered:
-		return _build_response(response, True, False, AuthorizationStatus.UNREGISTERED, f"User {user.id} - {user.chat_username} is unregistered.")
+		log = f"User {user.id} - {user.chat_username} is unregistered."
+		msg = rp.Reply(rp.types.CHAT_REG_REMINDER, reg_uploads = reg_uploads, videos_uploaded = videos_uploaded) 
+		return _build_response(response, True, False, AuthorizationStatus.UNREGISTERED, log, msg)
 
+	# If user is joined and registered but has exceeded media timeout, handle accordingly
 	if media_hours and user.last_media and _has_media_timeout(user.last_media, media_hours):
-		return _handle_media_timeout(user, response, bot)
+		return _handle_media_timeout(user, response, bot, config)
 
-	# If user seems authorized to this point, xheck if user is still in the chat
+	# If user seems authorized to this point, check if user is still in the chat
 	if not _is_user_in_chat(user, bot, config, db, shared_db):
 		return _build_response(response, True, False, AuthorizationStatus.CHAT_NOT_FOUND, f"User {user.id} - {user.chat_username} could not be found and has been set to 'Left Group'.")
 
-	# Default: ordinary user, received based on whether joined.
-	return _build_response(response, True, True, AuthorizationStatus.ORDINARY, f"User {user.id} - {user.chat_username} is an ordinary user (RANK: {user.rank}).")
+	# Default: ordinary user in good standing, received based on whether joined.
+	msg = rp.Reply(rp.types.CHAT_GOOD_STANDING, media_hours = media_hours) if media_hours else rp.Reply(rp.types.CHAT_GOOD_STANDING_NO_HOURS)
+	return _build_response(response, True, True, AuthorizationStatus.ORDINARY, f"User {user.id} - {user.chat_username} is an ordinary user (RANK: {user.rank}).", join_msg = msg)
 
 
 # Auth check helper functions
-def _build_response(base, can_join, can_receive, status: AuthorizationStatus, reply: str):
-    return {**base, "can_join": can_join, "can_receive": can_receive, "status": status, "log_message": reply}
+def _build_response(base, can_join, can_receive, status: AuthorizationStatus, log_message: str, join_msg=None) -> dict:
+    return {**base, "can_join": can_join, "can_receive": can_receive, "status": status, "log_message": "AUTH CHECK: " + log_message, "join_reply_msg": join_msg}
 
 
 def _has_media_timeout(last_media, media_hours):
     return (datetime.utcnow() - last_media).total_seconds() > (media_hours * 3600)
 
 
-def _handle_media_timeout(user, response, bot):
+def _handle_media_timeout(user, response, bot, config):
 	if not _check_user_active_silently(user.id, bot):
 		core.force_user_leave(user.id)
 		return _build_response(response, True, False, AuthorizationStatus.USER_LEFT, f"User {user.id} - {user.chat_username} has left the chat.")
@@ -244,7 +264,10 @@ def _handle_media_timeout(user, response, bot):
 	time_diff_hours = round(time_diff.total_seconds() / 3600)
 	time_diff_minutes = round(time_diff.total_seconds() / 60)
 	display_minutes = time_diff_minutes % 60
-	return _build_response(response, True, False, AuthorizationStatus.MEDIA_TIMEOUT, f"User {user.id} - {user.chat_username} has exceeded the media timeout: Last posted media {user.last_media}, {time_diff_hours} hours and {display_minutes} minutes ago.")
+	media_hours = config.get("media_hours", 5)
+	msg = rp.Reply(rp.types.CHAT_GOOD_STANDING, media_hours = media_hours)
+	log = f"User {user.id} - {user.chat_username} has exceeded the media timeout: Last posted media {user.last_media}, {time_diff_hours} hours and {display_minutes} minutes ago."
+	return _build_response(response, True, False, AuthorizationStatus.MEDIA_TIMEOUT, log, msg)
 
 
 def _is_user_in_chat(user, bot, config, db, shared_db=None):
@@ -270,5 +293,5 @@ def _check_user_active_silently(user_id, bot):
             logging.debug(f"User {user_id} has exited the DM with the bot.")
             return False  # User is no longer active
         else:
-            logging.exception("Unexpected error while checking user activity.")
+            logging.exception("Unexpected msgor while checking user activity.")
             return False

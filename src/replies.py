@@ -67,9 +67,16 @@ types = NumericEnum([
 	"CHAT_JOIN",
 	"CHAT_JOIN_FIRST",
 	"CHAT_LEAVE",
+	"CHAT_REJOIN",
+	"CHAT_REJOIN_UNREG",
+	"CHAT_REJOIN_NO_HOURS",
 	"CHAT_UPLOAD_UPON_JOINING",
+	"CHAT_GOOD_STANDING",
+	"CHAT_GOOD_STANDING_NO_HOURS",
+	"CHAT_REG_REMINDER",
 	"USER_IN_CHAT",
 	"USER_NOT_IN_CHAT",
+	"USER_IS_ADMIN",
 	"GIVEN_COOLDOWN",
 	"MESSAGE_DELETED",
 	"DELETION_QUEUED",
@@ -191,9 +198,16 @@ format_strs = {
 			"Have fun using ShinLounge! 😉"
 		),
 	types.CHAT_LEAVE: em("You left the {bot_name} lounge!"),
+	types.CHAT_REJOIN_NO_HOURS: em("Welcome back to the media bot."),
+	types.CHAT_REJOIN_UNREG: em("Welcome back to the media bot. You will need to upload {reg_uploads} video(s) to complete registration (Current number received: {videos_uploaded})."),
+	types.CHAT_REJOIN: em("Welcome back to the media bot. As a reminder, you will need to upload media every {media_hours} video(s) to stay live."),
 	types.CHAT_UPLOAD_UPON_JOINING: em("Welcome to the media bot. You will need to upload {reg_uploads} video(s) to complete registration (Current number received: {videos_uploaded})."),
+	types.CHAT_REG_REMINDER: em("You need to upload {reg_uploads} video(s) to complete registration (Current number received: {videos_uploaded})."),
+	types.CHAT_GOOD_STANDING_NO_HOURS: em("You are active here and registered."),
+	types.CHAT_GOOD_STANDING: em("You are active here and registered. Just a reminder, you will need to upload media every {media_hours} video(s) to stay live."),
 	types.USER_IN_CHAT: em("You're already in the {bot_name} lounge."),
 	types.USER_NOT_IN_CHAT: em("You're not in the {bot_name} lounge yet. Use /start to join!"),
+	types.USER_IS_ADMIN: em("Welcome. You are the admin and life is good. Obviously, you are the balls! The chat is ready for you to invite users."),
 	types.GIVEN_COOLDOWN: lambda deleted, **_:
 		em( "You've been handed a cooldown of {duration!d} for this message. Please read the /rules!"+
 			(deleted and " (message also deleted)" or "") ),
@@ -250,7 +264,7 @@ format_strs = {
 	types.ERR_ALREADY_WARNED: em("A warning has already been issued for this message."),
 	types.ERR_INVALID_DURATION: em("You entered an invalid cooldown duration."),
 	types.ERR_NOT_IN_COOLDOWN: em("This user is not in a cooldown right now."),
-	types.ERR_ACTIVE_ELSEWHERE: em("Users can only be in one lounge at a time. To join here, leave {lounge} first, and wait for the system to update."),
+	types.ERR_ACTIVE_ELSEWHERE: em("We've set this to be your currently active lounge. You will receive media here, and {lounge} media will be paused. Make sure you have uploaded enough media to register here."),
 	types.ERR_CHAT_FULL: em("Sorry, the chat is full right now. Please try again later."),
 	types.ERR_BLACKLISTED: lambda reason, contact, **_:
 		em( "You've been blacklisted" + (reason and " for {reason!x}" or "") )+

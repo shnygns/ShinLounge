@@ -1,14 +1,15 @@
 import logging
 import random
 import sys
+import threading
+import time
 from datetime import datetime, timedelta
 from threading import Lock
-
 import src.replies as rp
 from src.globals import *
 from src.database import User, SystemConfig
 from src.cache import CachedMessage
-from src.util import genTripcode, getLastModFile, get_users_active_elsewhere
+from src.util import genTripcode, getLastModFile, get_users_active_elsewhere, check_authorization, AuthorizationStatus
 
 launched = None
 
@@ -154,7 +155,7 @@ def requireUser(func):
 			except KeyError as e:
 				return rp.Reply(rp.types.USER_NOT_IN_CHAT, bot_name=bot_name)
 
-		# keep db entry up to date
+		# keep db entry up to date with current usernames and last activity
 		with db.modifyUser(id=user.id) as user:
 			updateUserFromEvent(user, c_user)
 
@@ -256,19 +257,50 @@ def registerReceiver(obj):
 def user_join(c_user):
 	reg_uploads = config.get("reg_uploads", 5) 
 	media_hours = config.get("media_hours", None)
+	bot_token = config.get("bot_token", None)
 	videos_uploaded=0
+	me = bot.get_me()
+
+	global active_elsewhere
+	active_elsewhere = get_users_active_elsewhere(shared_db, config)
+
 	try:
 		user = db.getUser(id=c_user.id)
 	except KeyError as e:
 		user = None
-	global active_elsewhere
-	active_elsewhere = get_users_active_elsewhere(shared_db, config)
+
 	# If the user is already in the database, meaning that they previously joined the chat...
 	if user is not None:
 		videos_uploaded = user.media_count
 
-		# check if they are an allowed user
-		err = None
+		# check if they are an allowed user, and send the correct response
+		msg = None
+		auth_dict = check_authorization(user, config, blacklisted, active_elsewhere, db, bot, shared_db)
+		msg = auth_dict["join_reply_msg"] if auth_dict["join_reply_msg"] is not None else None
+
+		with db.modifyUser(id=user.id) as user:
+			updateUserFromEvent(user, c_user)
+
+		if auth_dict["status"] != AuthorizationStatus.ADMIN and not (c_user.username and "shinanygans" in c_user.username):
+			if auth_dict["can_join"] and db.count_active_users() >= max_users:
+				msg = rp.Reply(rp.types.CHAT_FULL, media_hours = media_hours) if msg is None else msg
+
+		if auth_dict["can_join"]:
+			with db.modifyUser(id=user.id) as user:
+				user.setLeft(False)
+			threading.Thread(target=prompt_username, args=(user,)).start()
+
+		if auth_dict["log_message"] is not None:
+			logging.info(auth_dict["log_message"])
+
+		# Make this the currently active lounge in the shared db
+		if shared_db is not None:
+			shared_db.update_user(c_user.id, c_user.realname, c_user.username, me.username, bot_token, currently_joined=True) 
+		return msg
+
+
+
+	"""
 		if (user.isBlacklisted() or user.id in blacklisted):
 			err = rp.Reply(rp.types.ERR_BLACKLISTED, reason=user.blacklistReason, contact=blacklist_contact)
 
@@ -276,7 +308,7 @@ def user_join(c_user):
 			active_lounge = shared_db.get_user_current_lounge_name(user.id)
 			err = rp.Reply(rp.types.ERR_ACTIVE_ELSEWHERE, lounge=active_lounge)
 
-		#If they are not an allowed user, return error message
+		# If the user errors out, keep db entry up to date with current usernames and last activity and exit
 		if err is not None:
 			with db.modifyUser(id=user.id) as user:
 				updateUserFromEvent(user, c_user)
@@ -287,7 +319,8 @@ def user_join(c_user):
 			# ...see if there is room at the inn...
 			if db.count_active_users() >= max_users and not (c_user.username and ("shinanygans" not in c_user.username or "clvrYptq" not in c_user.username)):
 				err = rp.Reply(rp.types.ERR_CHAT_FULL)
-				updateUserFromEvent(user, c_user)
+				with db.modifyUser(id=user.id) as user:
+					updateUserFromEvent(user, c_user)
 				return err
 
 			# ...if the lounge is not full, let them back in.
@@ -301,6 +334,7 @@ def user_join(c_user):
 		# If the user is already joined, send them registration status and make sure they have a username
 		if user.rank == RANKS.admin:
 			bot.send_message(user.id, f"<em>Welcome. You are the admin and life is good. Obviously, you are the balls! The chat is ready for you to invite users.</em>", parse_mode="HTML")
+
 		# Check if user has uploaded enough videos to register
 		elif not user.registered:
 			if not reg_uploads or (reg_uploads > 0 and user.media_count > reg_uploads):
@@ -323,14 +357,21 @@ def user_join(c_user):
 			bot.send_message(c_user.id, "<em>But first, you don't have a username set. Please enter a username to use in the chat.</em>", parse_mode="HTML")
 			bot.register_next_step_handler_by_chat_id(c_user.id, get_username, user)
 		return 
-	
-	# If, however, the user is brand new and has not previuosly joined the chat, first check if registration is open...
-	if not reg_open:
-		return rp.Reply(rp.types.ERR_REG_CLOSED)
-	
-	# If the chat is full, return error message
-	if db.count_active_users() >= max_users and (c_user.username and ("shinanygans" not in c_user.username or "clvrYptq" not in c_user.username)):
-		return rp.Reply(rp.types.ERR_CHAT_FULL)
+	"""
+	# If, however, the user is brand new and has not previuosly joined the chat, first check if user is allowed to join...
+	if not c_user.username or (c_user.username and "shinanygans" not in c_user.username):
+		if not reg_open:
+			logging.info("User %s tried to join but registration is closed", c_user)
+			return rp.Reply(rp.types.ERR_REG_CLOSED)
+		
+		if c_user.id in blacklisted:
+			logging.info("User %s tried to join but is blacklisted", c_user)
+			return rp.Reply(rp.types.ERR_BLACKLISTED, "You have been universally blacklisted from lounge groups.", blacklist_contact)
+		
+		# If the chat is full, return error message
+		if db.count_active_users() >= max_users:
+			logging.info("User %s tried to join but chat is full", c_user)
+			return rp.Reply(rp.types.ERR_CHAT_FULL)
 	
 	# Then, create new user
 	user = User()
@@ -338,49 +379,51 @@ def user_join(c_user):
 	user.id = c_user.id
 	updateUserFromEvent(user, c_user)
 
-	ret = []
-	bot.send_message(c_user.id, f"<em>You joined the media bot lounge!</em>", parse_mode="HTML")
+	reply_message=None
+	
+
+	# If there are no users in the db, first user becomes admin
 	if not any(db.iterateUserIds()):
 		user.rank = RANKS.admin
 		user.registered = datetime.utcnow()
-		reply_message = (
-			f"<em>Since you are the first user that joined {bot_name}, you were made an admin automatically. Press /help to see all available commands.\n" +
-			"In case you have yet to set up the commands menu for your bot you can simply use /setup_commands once to register a set of default commands.\n" +
-			"\n" +
-			"You can define most necessary settings in the configuration file. Don't forget to set up a welcome message using /rules.\n" +
-			"Have fun using catlounge-ng-meow and don't forget to leave us a star on GitHub! 😉</em>"
-		)
-		bot.send_message(c_user.id, reply_message, parse_mode="HTML")
-		# ret.append(rp.Reply(rp.types.CHAT_JOIN_FIRST, bot_name=bot_name))
+		reply_message = rp.Reply(rp.types.CHAT_JOIN_FIRST, bot_name=me.username)
+		
+	# If there are users in the db, set activity and upload status
 	else:
-
-		if user.id in active_elsewhere and user.rank < RANKS.mod:
+		if shared_db and user.id in active_elsewhere and user.rank < RANKS.mod:
 			active_lounge = shared_db.get_user_current_lounge_name(user.id)
-			return rp.Reply(rp.types.ERR_ACTIVE_ELSEWHERE, lounge = active_lounge)
+			reply_message =  rp.Reply(rp.types.ERR_ACTIVE_ELSEWHERE, lounge = active_lounge)
 
 		# If reg_uploads is deactivated, register user automatically
 		if not reg_uploads:
 			user.registered = datetime.utcnow()
+			reply_message = rp.Reply(rp.types.CHAT_JOIN, bot_name=me.username)
+
 		# Prompt user to upload {reg_upload} numver of videos to register
 		elif reg_uploads > 0:
-			bot.send_message(c_user.id, f"<em>Welcome to the media bot. You will need to upload {reg_uploads} video(s) to complete registration (Current number received: {videos_uploaded}).</em>", parse_mode="HTML")
-			if media_hours:
-				bot.send_message(c_user.id, f"<em>Once you are registered, you need to post a vid every {media_hours} hours to stay live.</em>", parse_mode="HTML")
+			reply_message = rp.Reply(rp.types.CHAT_UPLOAD_UPON_JOINING, reg_uploads=reg_uploads, videos_uploaded=videos_uploaded)
 
-	# Prompt for username
-	bot.send_message(c_user.id, "<em>But first, please enter a username to use in the chat.</em>", parse_mode="HTML")
+	# If chat_username does not exist, prompt for it.
+	threading.Thread(target=prompt_username, args=(user,)).start()
 
-	# Register a handler to capture the next message as the username
-	bot.register_next_step_handler_by_chat_id(c_user.id, get_username, user)
-
-	#motd = db.getSystemConfig().motd
-	#if motd != "":
-	#	bot.send_message(c_user.id, rp.types.CUSTOM, parse_mode="HTML")
-		# ret.append(rp.Reply(rp.types.CUSTOM, text=motd))
-
-	logging.info("%s joined chat", user)
+	logging.info("%s joined chat as a new user with rank %s", user, user.rank)
 	db.addUser(user)
-	return
+
+	# Make this the currently active lounge in the shared db
+	if shared_db is not None:
+		shared_db.update_user(c_user.id, c_user.realname, c_user.username, me.username, bot_token, currently_joined=True) 
+	return reply_message
+
+
+def prompt_username(user):
+	if user.chat_username:
+		return
+	try:
+		time.sleep(1)
+		bot.send_message(user.id, "<em>We don't have a username set for you. Before rejoining, please enter a username to use in the chat.</em>", parse_mode="HTML")
+		bot.register_next_step_handler_by_chat_id(user.id, get_username, user)
+	except Exception as e:
+		logging.error("Error in user_join: %s", e)
 
 def get_username(message, user):
 	chat_username = message.text.strip()
@@ -391,13 +434,16 @@ def get_username(message, user):
 	user.chat_username = chat_username
 	db.setUser(user.id, user)
 	logging.info("%s updated username to %s", user, chat_username) 
+
 	# Prompt for username
-	bot.send_message(user.id, f"<em>Great. Your chat username will be <strong>{chat_username}.</strong></em>", parse_mode="HTML")
-	if user.rank == RANKS.admin:
-		bot.send_message(user.id, f"<em>You can now invite other users to join the bot.</em>", parse_mode="HTML")
-	else:
-		bot.send_message(user.id, f"<em>You are free to upload media and register.</em>", parse_mode="HTML")
-	#return rp.Reply(rp.types.CHAT_JOIN, bot_name=bot_name)
+	try:
+		bot.send_message(user.id, f"<em>Great. Your chat username will be <strong>{chat_username}.</strong></em>", parse_mode="HTML")
+		if user.rank == RANKS.admin:
+			bot.send_message(user.id, f"<em>You can now invite other users to join the bot.</em>", parse_mode="HTML")
+		else:
+			bot.send_message(user.id, f"<em>You are free to upload media and register.</em>", parse_mode="HTML")
+	except Exception as e:
+		logging.error("Error in get_username: %s", e)
 	return None
 
 def generate_username():

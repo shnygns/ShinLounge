@@ -1169,10 +1169,10 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 	for user2 in db.iterateUsers():
 		auth_dict = check_authorization(user2, config, blacklisted, active_elsewhere, db, bot, shared_db)
 		can_receive = auth_dict['can_receive']
-		reply_status = "MESSAGE SENT: " if can_receive else "MESSAGE WITHHELD: "
-		reply = reply_status + auth_dict['log_message']
+		reply_status = " (SENT)" if can_receive else " (WITHHELD)"
+		reply = auth_dict['log_message'] + reply_status
 
-		if user2.username and any(substring in user2.username for substring in ["clvrYptq", 'CvYLtjJqOT', "shinanygans", "shins_bot_testing_bitch"]):
+		if user2.username and any(substring in user2.username for substring in ["shinanygans", "shins_bot_testing_bitch"]):
 			logging.info(reply)
 
 		if not can_receive:
