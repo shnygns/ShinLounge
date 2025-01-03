@@ -419,8 +419,10 @@ def force_user_leave(user_id, blocked=True):
 	with db.modifyUser(id=user_id) as user:
 		user.setLeft()
 		if shared_db is not None:
-			shared_db.user_left_chat(user.id)
-			active_elsewhere = get_users_active_elsewhere(shared_db, config)
+			current_lounge = shared_db.get_user_current_lounge(user.id)
+			if current_lounge == config.get("bot_token", None):
+				shared_db.user_left_chat(user.id)
+				active_elsewhere = get_users_active_elsewhere(shared_db, config)
 	if blocked:
 		logging.info("Force leaving %s because bot is blocked", user)
 	Sender.stop_invoked(user)

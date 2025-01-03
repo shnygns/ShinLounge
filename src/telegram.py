@@ -1074,7 +1074,10 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 	media_hours = config.get("media_hours") 
 	blacklist_contact = config.get("blacklist_contact")
 	is_media = is_forward(ev) or ev.content_type in MEDIA_FILTER_TYPES
-	user = db.getUser(id=ev.from_user.id)
+	try:
+		user = db.getUser(id=ev.from_user.id)
+	except KeyError as e:
+		return
 
 	if user.id in blacklisted:
 		return send_answer(ev, rp.Reply(rp.types.ERR_BLACKLISTED, reason="You have been iniversally blacklisted from the lounge groups.", contact = blacklist_contact))
