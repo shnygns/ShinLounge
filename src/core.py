@@ -296,6 +296,7 @@ def user_join(c_user):
 		# Make this the currently active lounge in the shared db
 		if shared_db is not None:
 			shared_db.update_user(c_user.id, c_user.realname, c_user.username, me.username, bot_token, currently_joined=True) 
+			active_elsewhere = get_users_active_elsewhere(shared_db, config)
 		return msg
 
 
