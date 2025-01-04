@@ -921,9 +921,10 @@ def relay(ev):
 		user_id = user.id
 		user_full_name = user.full_name
 		user_username = user.username
-		shared_db.update_user(user_id, user_full_name, user_username, me.username, config["bot_token"])
 		active_elsewhere = get_users_active_elsewhere(shared_db, config)
 		blacklisted = shared_db.get_list_of_banned_users()
+		if user.isJoined():
+			shared_db.update_user(user_id, user_full_name, user_username, me.username, config["bot_token"])
 	# SHIN UPDATE: Functions to send media group videos as an album
 
 	def active_elsewhere_reply(user, shared_db, config):
@@ -1074,19 +1075,16 @@ def relay_inner(ev, *, caption_text=None, signed=False, tripcode=False, ksigned=
 	media_hours = config.get("media_hours") 
 	blacklist_contact = config.get("blacklist_contact")
 	is_media = is_forward(ev) or ev.content_type in MEDIA_FILTER_TYPES
-	try:
-		user = db.getUser(id=ev.from_user.id)
-	except KeyError as e:
-		return
-
-	if user.id in blacklisted:
-		return send_answer(ev, rp.Reply(rp.types.ERR_BLACKLISTED, reason="You have been iniversally blacklisted from the lounge groups.", contact = blacklist_contact))
-
 
 	msid = core.prepare_user_message(UserContainer(ev.from_user), calc_spam_score(ev),
 		is_media=is_media, signed=signed, tripcode=tripcode, ksigned=ksigned)
 	if msid is None or isinstance(msid, rp.Reply):
 		return send_answer(ev, msid) # don't relay message, instead reply
+	
+	user = db.getUser(id=ev.from_user.id)
+
+	if user.id in blacklisted:
+		return send_answer(ev, rp.Reply(rp.types.ERR_BLACKLISTED, reason="You have been iniversally blacklisted from the lounge groups.", contact = blacklist_contact))
 
 	if album_files:
 		if isinstance(album_files, list):
