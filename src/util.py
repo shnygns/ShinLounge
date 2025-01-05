@@ -234,10 +234,10 @@ def check_authorization(user, config, blacklisted, active_elsewhere, db, bot, sh
 
 	# If user is joined and registered but has exceeded media timeout, handle accordingly
 	if media_hours and user.last_media and _has_media_timeout(user.last_media, media_hours):
-		return _handle_media_timeout(user, response, bot, config)
+		return _handle_media_timeout(user, response, bot, config, db, shared_db)
 
 	# If user seems authorized to this point, check if user is still in the chat
-	if not _is_user_in_chat(user, bot, config, db, shared_db):
+	if not _check_user_active_silently(user, bot, config, db, shared_db):
 		return _build_response(response, True, False, AuthorizationStatus.CHAT_NOT_FOUND, f"User {user.id} - {user.chat_username} could not be found and has been set to 'Left Group'.")
 
 	# Default: ordinary user in good standing, received based on whether joined.
@@ -254,8 +254,8 @@ def _has_media_timeout(last_media, media_hours):
     return (datetime.utcnow() - last_media).total_seconds() > (media_hours * 3600)
 
 
-def _handle_media_timeout(user, response, bot, config):
-	if not _check_user_active_silently(user.id, bot):
+def _handle_media_timeout(user, response, bot, config, db, shared_db=None):
+	if not _check_user_active_silently(user, bot, config, db, shared_db):
 		core.force_user_leave(user.id)
 		return _build_response(response, True, False, AuthorizationStatus.USER_LEFT, f"User {user.id} - {user.chat_username} has left the chat.")
 	time_diff = datetime.utcnow() - user.last_media
@@ -267,7 +267,7 @@ def _handle_media_timeout(user, response, bot, config):
 	log = f"User {user.id} - {user.chat_username} has exceeded the media timeout: Last posted media {user.last_media}, {time_diff_hours} hours and {display_minutes} minutes ago."
 	return _build_response(response, True, False, AuthorizationStatus.MEDIA_TIMEOUT, log, msg)
 
-
+"""
 def _is_user_in_chat(user, bot, config, db, shared_db=None):
     try:
         bot.get_chat(user.id)
@@ -281,15 +281,22 @@ def _is_user_in_chat(user, bot, config, db, shared_db=None):
                 get_users_active_elsewhere(shared_db, config)
             return False
     return True
+"""
 
-def _check_user_active_silently(user_id, bot):
-    try:
-        bot.send_chat_action(user_id, "typing")
-        return True  # User is active
-    except telebot.apihelper.ApiTelegramException as e:
-        if "forbidden" in str(e).lower() or "chat not found" in str(e).lower():
-            logging.debug(f"User {user_id} has exited the DM with the bot.")
-            return False  # User is no longer active
-        else:
-            logging.exception("Unexpected msgor while checking user activity.")
-            return False
+def _check_user_active_silently(user, bot, config, db, shared_db=None):
+	try:
+		bot.send_chat_action(user.id, "typing")
+		return True  # User is active
+	except telebot.apihelper.ApiTelegramException as e:
+		if "forbidden" in str(e).lower() or "chat not found" in str(e).lower():
+			logging.debug(f"User {user.id} has exited the DM with the bot.")
+			with db.modifyUser(id=user.id) as user:
+				user.setLeft(True)
+			if shared_db is not None:
+				current_lounge = shared_db.get_user_current_lounge(user.id)
+				if current_lounge == config.get("bot_token", None):
+					shared_db.user_left_chat(user.id)					
+			return False  # User is no longer active
+		else:
+			logging.exception("Unexpected msgor while checking user activity.")
+			return False  # User is no longer active

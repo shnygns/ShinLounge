@@ -776,17 +776,17 @@ def blacklist_user(user, msid, reason, del_all=False, univ=False):
 		return rp.Reply(rp.types.ERR_NOT_IN_CACHE)
 
 	with db.modifyUser(id=cm.user_id) as user2:
-		if user2.rank >= user.rank and not univ:
+		if user2.rank >= user.rank:
 			return
 		user2.setBlacklisted(reason)
 	cm.warned = True
 	Sender.stop_invoked(user2, True) # do this before queueing new messages below
 	_push_system_message(
 		rp.Reply(rp.types.ERR_BLACKLISTED, reason=reason, contact=blacklist_contact),
-		who=user2.chat_username, reply_to=msid)
+		who=user2, reply_to=msid)
 	
 	#SHIN-PROVEMENT: Record ban to universal database
-	if shared_db is not None:
+	if univ and shared_db is not None:
 		global blacklisted
 		shared_db.universal_ban_user(user2.id)
 		blacklisted.add(user2.id)

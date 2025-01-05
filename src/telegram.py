@@ -923,8 +923,7 @@ def relay(ev):
 		user_username = user.username
 		active_elsewhere = get_users_active_elsewhere(shared_db, config)
 		blacklisted = shared_db.get_list_of_banned_users()
-		if user.isJoined():
-			shared_db.update_user(user_id, user_full_name, user_username, me.username, config["bot_token"])
+
 	# SHIN UPDATE: Functions to send media group videos as an album
 
 	def active_elsewhere_reply(user, shared_db, config):
@@ -1045,7 +1044,12 @@ def relay(ev):
 	except KeyError as e:
 		db_user = None
 
-	
+	if shared_db and db_user and db_user.isJoined():
+		active_user_count = db.count_active_users()
+		shared_db.ping(me.username, config["bot_token"], active_user_count = active_user_count)
+		shared_db.update_user(user_id, user_full_name, user_username, me.username, config["bot_token"])
+
+
 	#SHIN UPDATE - Check if the message is part of an album
 	if media_packing and ev.content_type in ['video', 'photo']:
 		pack_media(ev)
