@@ -2,3 +2,4 @@ config.copy.yaml
 config.yaml
 *.sqlite
 .vscode
+src/__pycache__/
