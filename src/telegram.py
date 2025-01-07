@@ -962,8 +962,8 @@ def relay(ev):
 		remaining_media_files = data[10:]
 		if remaining_media_files:
 			tgsched.register(send_packed_media_as_album, name="media_packing", data=remaining_media_files, ev=ev)
-		else:
-			active_elsewhere_reply(user, shared_db, config)
+		#else:
+		#	active_elsewhere_reply(user, shared_db, config)
 		relay_inner(ev, album_files=media_files_to_send)
 
 	def handle_media_group(ev):
@@ -1007,17 +1007,18 @@ def relay(ev):
 	def pack_media(ev):
 		# Register or add to a tsched job that will assemble media in groups of 10 and then post them as an album
 		# If there is remainder media upon job execution, remainder should be sent to a newly registered job
+		from_user = ev.from_user
 		media_type = ev.content_type
 		if media_type == "video":
 			media_file_id = ev.video.file_id
 		elif media_type == "photo":
 			media_file_id = ev.photo[-1].file_id  # Get the highest resolution photo
-		job = tgsched.get_job_by_name("media_packing")
+		job = tgsched.get_job_by_name(f"media_packing_{from_user}")
 		if job:
 			job_data = job[2]
 			job_data.append({'file_id': media_file_id, 'media_type': media_type})
 		else:
-			tgsched.register(send_packed_media_as_album, name="media_packing", data=[{'file_id': media_file_id, 'media_type': media_type}], ev=ev, first_run = 1)
+			tgsched.register(send_packed_media_as_album, name=f"media_packing_{from_user}", data=[{'file_id': media_file_id, 'media_type': media_type}], ev=ev, first_run = 1)
 		return
 	
 
